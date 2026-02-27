@@ -244,6 +244,7 @@ def get_package_info(
     seen:      set | None    = None,
     solo:      bool          = False,
     use_cache: bool          = True,
+    quiet:     bool          = False,
     depth:     int           = 0,
 ) -> PackageInfo | None:
     """
@@ -280,7 +281,8 @@ def get_package_info(
             resolved_version = _resolve_version(releases, spec)
             if resolved_version is None:
                 log.warning("%s✗ %s  (no version matching %s)", indent, name, spec)
-                print(f"{indent}  ✗ {name}  (no version matching {spec})")
+                if not quiet:
+                    print(f"{indent}  ✗ {name}  (no version matching {spec})")
                 return None
             log.debug("latest %s does not satisfy %s, resolved to %s", latest_version, spec, resolved_version)
     else:
@@ -299,7 +301,8 @@ def get_package_info(
     filename  = best_file["filename"] if best_file else "N/A"
 
     log.info("%s✓ %s==%s  →  %s  (%s)", indent, name, resolved_version, filename, _format_size(size))
-    print(f"{indent}  ✓ {name}=={resolved_version}  →  {filename}")
+    if not quiet:
+        print(f"{indent}  ✓ {name}=={resolved_version}  →  {filename}")
 
     pkg = PackageInfo(name=name, version=resolved_version, size=size, filename=filename)
 
@@ -338,6 +341,7 @@ def get_package_info(
             seen      = seen,
             solo      = False,
             use_cache = use_cache,
+            quiet     = quiet,
             depth     = depth + 1,
         )
         if dep:
@@ -362,55 +366,85 @@ def _total_size(pkg: PackageInfo) -> int:
     return pkg.size + sum(_total_size(d) for d in pkg.dependencies)
 
 
-def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_root: bool = False) -> None:
+
+def _to_dict(pkg: PackageInfo, as_bytes: bool = False) -> dict:
+    """Serialize a PackageInfo tree to a plain dict suitable for JSON output."""
+    size = pkg.size if as_bytes else _format_size(pkg.size)
+    total = _total_size(pkg)
+    result = {
+        "name":         pkg.name,
+        "version":      pkg.version,
+        "size":         pkg.size if as_bytes else _format_size(pkg.size),
+        "total_size":   total if as_bytes else _format_size(total),
+        "filename":     pkg.filename,
+    }
+    if pkg.via_extra:
+        result["via_extra"] = pkg.via_extra
+    if pkg.dependencies:
+        result["dependencies"] = [_to_dict(d, as_bytes) for d in pkg.dependencies]
+    return result
+
+def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_root: bool = False, fmt=_format_size) -> None:
     if is_root:
         total = _total_size(pkg)
-        print(f"\n  {pkg.name}=={pkg.version}  ({_format_size(total)} total)")
+        print(f"\n  {pkg.name}=={pkg.version}  ({fmt(total)} total)")
         child_prefix = "  "
     else:
         connector    = "└── " if is_last else "├── "
         child_prefix = prefix + ("    " if is_last else "│   ")
         extra_tag = f"  [extra: {pkg.via_extra}]" if pkg.via_extra else ""
-        print(f"{prefix}{connector}{pkg.name}=={pkg.version}  {_format_size(pkg.size)}{extra_tag}")
+        print(f"{prefix}{connector}{pkg.name}=={pkg.version}  {fmt(pkg.size)}{extra_tag}")
 
     for i, dep in enumerate(pkg.dependencies):
         _print_tree(
             dep,
             prefix  = child_prefix,
             is_last = i == len(pkg.dependencies) - 1,
+            fmt     = fmt,
         )
 
 
 # ───────────────────────────── main ─────────────────────────────────
 
 
-def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> None:
+def pip_size(package_spec: str, no_deps: bool = False, use_cache: bool = True, quiet: bool = False, as_bytes: bool = False, as_json: bool = False) -> None:
     req  = Requirement(package_spec)
     name = req.name
     spec = str(req.specifier)
 
-    log.info("starting  package=%s  spec=%s  solo=%s  cache=%s", name, spec or "latest", solo, use_cache)
+    log.info("starting  package=%s  spec=%s  no_deps=%s  cache=%s", name, spec or "latest", no_deps, use_cache)
     log.debug("cache dir: %s", _cache_dir())
     log.debug("platform tags (top 5): %s", list(SUPPORTED_TAGS.keys())[:5])
 
-    cache_note = "  (cache disabled)" if not use_cache else ""
-    print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
+    if not quiet:
+        cache_note = "  (cache disabled)" if not use_cache else ""
+        print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
 
     pkg = get_package_info(
         name      = name,
         spec      = spec,
         extras    = set(req.extras) if req.extras else None,
-        solo      = solo,
+        solo      = no_deps,
         use_cache = use_cache,
+        quiet     = quiet,
     )
 
     if pkg is None:
-        print("\n❌ Could not resolve package.")
+        if not quiet:
+            print("\n❌ Could not resolve package.")
         return
 
-    log.info("resolved  total=%s", _format_size(_total_size(pkg)))
-    _print_tree(pkg, is_root=True)
-    print()
+    total = _total_size(pkg)
+    log.info("resolved  total=%s", _format_size(total))
+
+    if as_json:
+        print(json.dumps(_to_dict(pkg, as_bytes), indent=2))
+    elif quiet:
+        print(total if as_bytes else _format_size(total))
+    else:
+        fmt = (lambda b: str(b)) if as_bytes else _format_size
+        _print_tree(pkg, is_root=True, fmt=fmt)
+        print()
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -428,9 +462,24 @@ if __name__ == "__main__":
         help='e.g. "requests" or "requests==2.31.0"',
     )
     parser.add_argument(
-        "--solo",
+        "--no-deps",
         action="store_true",
-        help="Show size of the package itself only, without dependencies.",
+        help="Show size of the package itself only, without resolving dependencies.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Print only the total size and nothing else.",
+    )
+    parser.add_argument(
+        "--bytes",
+        action="store_true",
+        help="Report all sizes in raw bytes instead of human-readable units.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the full dependency tree as JSON.",
     )
     parser.add_argument(
         "--no-cache",
@@ -479,7 +528,7 @@ if __name__ == "__main__":
         parser.error("the following arguments are required: package")
 
     try:
-        pip_size(args.package, solo=args.solo, use_cache=not args.no_cache)
+        pip_size(args.package, no_deps=args.no_deps, use_cache=not args.no_cache, quiet=args.quiet, as_bytes=args.bytes, as_json=args.json)
     except RuntimeError as e:
         log.error("%s", e)
         print(f"\n❌ Error: {e}")
