@@ -58,7 +58,7 @@ def _cache_dir() -> Path:
 def _cache_path(url: str) -> Path:
     # strip the common prefix and replace slashes to get a safe filename
     # e.g. https://pypi.org/pypi/requests/json  ->  requests.json
-    safe = url.replace("https://pypi.org/pypi/", "").replace("/json", "").replace("/", "_")
+    safe = url.replace("https://pypi.org/pypi/", "").removesuffix("/json").replace("/", "_")
     return _cache_dir() / f"{safe}.json"
 
 
