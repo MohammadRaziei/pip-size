@@ -8,14 +8,20 @@ Usage:
     python pip_size.py "requests==2.31.0"
     python pip_size.py requests --verbose
     python pip_size.py requests --extra-verbose
+    python pip_size.py requests --no-cache
+    python pip_size.py --clear-cache
 """
 
 import json
 import logging
+import os
+import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -26,16 +32,81 @@ from packaging.version import Version
 
 log = logging.getLogger("pip_size")
 
-PYPI_JSON_API = "https://pypi.org/pypi/{package}/json"
-PYPI_VER_API  = "https://pypi.org/pypi/{package}/{version}/json"
+PYPI_JSON_API     = "https://pypi.org/pypi/{package}/json"
+PYPI_VER_API      = "https://pypi.org/pypi/{package}/{version}/json"
+CACHE_TTL_SECONDS = 24 * 60 * 60
 
 SUPPORTED_TAGS = {str(t): i for i, t in enumerate(sys_tags())}
+
+
+# ───────────────────────────── cache ────────────────────────────────
+
+
+def _cache_dir() -> Path:
+    """
+    Return the platform-appropriate cache directory:
+      Linux / macOS : ~/.cache/pip-size  (respects $XDG_CACHE_HOME)
+      Windows       : %LOCALAPPDATA%/pip-size/Cache
+    """
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+        return base / "pip-size" / "Cache"
+    base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    return base / "pip-size"
+
+
+def _cache_path(url: str) -> Path:
+    safe = url.replace("https://pypi.org/pypi/", "").replace("/", "_")
+    return _cache_dir() / f"{safe}.json"
+
+
+def _cache_read(url: str) -> dict | None:
+    path = _cache_path(url)
+    if not path.exists():
+        return None
+    age = time.time() - path.stat().st_mtime
+    if age > CACHE_TTL_SECONDS:
+        log.debug("cache expired  (%.0fh old)  %s", age / 3600, path.name)
+        path.unlink(missing_ok=True)
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        log.debug("cache hit  %s", path.name)
+        return data
+    except (json.JSONDecodeError, OSError):
+        path.unlink(missing_ok=True)
+        return None
+
+
+def _cache_write(url: str, data: dict) -> None:
+    path = _cache_path(url)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        log.debug("cache write  %s", path.name)
+    except OSError as e:
+        log.debug("cache write failed: %s", e)
+
+
+def clear_cache() -> int:
+    """Delete all cached files. Returns the number of files removed."""
+    cache = _cache_dir()
+    if not cache.exists():
+        return 0
+    count = len(list(cache.glob("*.json")))
+    shutil.rmtree(cache, ignore_errors=True)
+    return count
 
 
 # ───────────────────────────── http ─────────────────────────────────
 
 
-def _fetch_json(url: str) -> dict:
+def _fetch_json(url: str, use_cache: bool = True) -> dict:
+    if use_cache:
+        cached = _cache_read(url)
+        if cached is not None:
+            return cached
+
     log.debug("GET %s", url)
     req = urllib.request.Request(
         url,
@@ -44,7 +115,9 @@ def _fetch_json(url: str) -> dict:
     try:
         with urllib.request.urlopen(req) as r:
             data = json.loads(r.read().decode())
-            log.debug("Response OK  (%s)", url)
+            log.debug("response OK  (%s)", url)
+            if use_cache:
+                _cache_write(url, data)
             return data
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"HTTP {e.code}: {e.reason}  ({url})") from e
@@ -79,7 +152,6 @@ def _wheel_priority(filename: str) -> int:
         return sys.maxsize
 
     python_tag, abi_tag, platform_tag = tags
-
     best = sys.maxsize
     for py in python_tag.split("."):
         for abi in abi_tag.split("."):
@@ -98,7 +170,6 @@ def _best_file(files: list[dict]) -> dict | None:
     Prefers wheels over sdist, picks the highest-priority wheel.
     """
     env = default_environment()
-
     compatible = []
     for f in files:
         requires_python = f.get("requires_python")
@@ -106,7 +177,6 @@ def _best_file(files: list[dict]) -> dict | None:
             if not SpecifierSet(requires_python).contains(env["python_version"]):
                 log.debug("skip  %s  (requires_python %s)", f["filename"], requires_python)
                 continue
-
         if f["filename"].endswith(".whl"):
             priority = _wheel_priority(f["filename"])
             if priority < sys.maxsize:
@@ -148,22 +218,23 @@ def _resolve_version(releases: dict, specifier_str: str) -> str | None:
     return None
 
 
-def fetch_package(name: str, version: str | None = None) -> tuple[dict, str]:
+def fetch_package(name: str, version: str | None = None, use_cache: bool = True) -> tuple[dict, str]:
     """Fetch PyPI JSON and return (data, resolved_version)."""
     if version:
-        data = _fetch_json(PYPI_VER_API.format(package=name, version=version))
+        data = _fetch_json(PYPI_VER_API.format(package=name, version=version), use_cache)
         return data, version
-    data = _fetch_json(PYPI_JSON_API.format(package=name))
+    data = _fetch_json(PYPI_JSON_API.format(package=name), use_cache)
     return data, data["info"]["version"]
 
 
 def get_package_info(
-    name:    str,
-    version: str | None = None,
-    spec:    str        = "",
-    seen:    set | None = None,
-    solo:    bool       = False,
-    depth:   int        = 0,
+    name:      str,
+    version:   str | None = None,
+    spec:      str        = "",
+    seen:      set | None = None,
+    solo:      bool       = False,
+    use_cache: bool       = True,
+    depth:     int        = 0,
 ) -> PackageInfo | None:
     """
     Recursively resolve a package and its dependencies.
@@ -176,7 +247,7 @@ def get_package_info(
     log.info("%sresolving  %s%s", indent, name, f"  (spec: {spec})" if spec else "")
 
     try:
-        data, resolved_version = fetch_package(name, version)
+        data, resolved_version = fetch_package(name, version, use_cache)
     except RuntimeError as e:
         log.warning("%s✗ %s  (%s)", indent, name, e)
         print(f"{indent}  ✗ {name}  (error: {e})")
@@ -192,7 +263,7 @@ def get_package_info(
                 return None
             log.debug("version mismatch: latest=%s, using alt=%s", resolved_version, alt)
             resolved_version = alt
-            data, _ = fetch_package(name, resolved_version)
+            data, _ = fetch_package(name, resolved_version, use_cache)
 
     key = name.lower()
     if key in seen:
@@ -214,7 +285,6 @@ def get_package_info(
 
     env           = default_environment()
     requires_dist = data["info"].get("requires_dist") or []
-
     log.debug("%s%d dependencies declared", indent, len(requires_dist))
 
     for req_str in requires_dist:
@@ -232,12 +302,13 @@ def get_package_info(
             log.debug("note: %s has extras %s (not resolved separately)", req.name, req.extras)
 
         dep = get_package_info(
-            name    = req.name,
-            version = None,
-            spec    = str(req.specifier),
-            seen    = seen,
-            solo    = False,
-            depth   = depth + 1,
+            name      = req.name,
+            version   = None,
+            spec      = str(req.specifier),
+            seen      = seen,
+            solo      = False,
+            use_cache = use_cache,
+            depth     = depth + 1,
         )
         if dep:
             pkg.dependencies.append(dep)
@@ -281,18 +352,20 @@ def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_roo
 # ───────────────────────────── main ─────────────────────────────────
 
 
-def pip_size(package_spec: str, solo: bool = False) -> None:
+def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> None:
     req     = Requirement(package_spec)
     name    = req.name
     spec    = str(req.specifier)
     version = spec[2:] if spec.startswith("==") else None
 
-    log.info("starting  package=%s  spec=%s  solo=%s", name, spec or "latest", solo)
+    log.info("starting  package=%s  spec=%s  solo=%s  cache=%s", name, spec or "latest", solo, use_cache)
+    log.debug("cache dir: %s", _cache_dir())
     log.debug("platform tags (top 5): %s", list(SUPPORTED_TAGS.keys())[:5])
 
-    print(f"\n🔍 Resolving '{package_spec}'...")
+    cache_note = "  (cache disabled)" if not use_cache else ""
+    print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
 
-    pkg = get_package_info(name=name, version=version, spec=spec, solo=solo)
+    pkg = get_package_info(name=name, version=version, spec=spec, solo=solo, use_cache=use_cache)
 
     if pkg is None:
         print("\n❌ Could not resolve package.")
@@ -312,11 +385,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Calculate real download size of a PyPI package. Zero downloads."
     )
-    parser.add_argument("package", help='e.g. "requests" or "requests==2.31.0"')
+    parser.add_argument(
+        "package",
+        nargs="?",
+        help='e.g. "requests" or "requests==2.31.0"',
+    )
     parser.add_argument(
         "--solo",
         action="store_true",
         help="Show size of the package itself only, without dependencies.",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Bypass cache and always fetch fresh data from PyPI.",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help=f"Delete all cached PyPI responses and exit.  (cache dir: {_cache_dir()})",
     )
 
     verbosity = parser.add_mutually_exclusive_group()
@@ -328,7 +415,7 @@ if __name__ == "__main__":
     verbosity.add_argument(
         "--extra-verbose",
         action="store_true",
-        help="Enable DEBUG logging (includes HTTP requests, wheel scoring, marker evaluation).",
+        help="Enable DEBUG logging (HTTP requests, wheel scoring, marker evaluation, cache).",
     )
 
     args = parser.parse_args()
@@ -346,8 +433,16 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.WARNING)
 
+    if args.clear_cache:
+        removed = clear_cache()
+        print(f"🗑  Cache cleared — {removed} file(s) removed.  ({_cache_dir()})")
+        sys.exit(0)
+
+    if not args.package:
+        parser.error("the following arguments are required: package")
+
     try:
-        pip_size(args.package, solo=args.solo)
+        pip_size(args.package, solo=args.solo, use_cache=not args.no_cache)
     except RuntimeError as e:
         log.error("%s", e)
         print(f"\n❌ Error: {e}")
