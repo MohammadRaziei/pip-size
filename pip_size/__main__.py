@@ -218,11 +218,8 @@ def _resolve_version(releases: dict, specifier_str: str) -> str | None:
     return None
 
 
-def fetch_package(name: str, version: str | None = None, use_cache: bool = True) -> tuple[dict, str]:
-    """Fetch PyPI JSON and return (data, resolved_version)."""
-    if version:
-        data = _fetch_json(PYPI_VER_API.format(package=name, version=version), use_cache)
-        return data, version
+def fetch_package(name: str, use_cache: bool = True) -> tuple[dict, str]:
+    """Fetch PyPI JSON (latest) and return (data, latest_version). Always exactly one request per package."""
     data = _fetch_json(PYPI_JSON_API.format(package=name), use_cache)
     return data, data["info"]["version"]
 
@@ -238,7 +235,7 @@ def get_package_info(
 ) -> PackageInfo | None:
     """
     Recursively resolve a package and its dependencies.
-    Uses PyPI JSON API only — zero downloads.
+    Uses PyPI JSON API only — zero downloads. Always exactly one request per package.
     """
     if seen is None:
         seen = set()
@@ -247,23 +244,28 @@ def get_package_info(
     log.info("%sresolving  %s%s", indent, name, f"  (spec: {spec})" if spec else "")
 
     try:
-        data, resolved_version = fetch_package(name, version, use_cache)
+        data, latest_version = fetch_package(name, use_cache)
     except RuntimeError as e:
         log.warning("%s✗ %s  (%s)", indent, name, e)
         print(f"{indent}  ✗ {name}  (error: {e})")
         return None
 
-    if spec:
+    releases = data.get("releases", {})
+    if version:
+        resolved_version = version
+    elif spec:
         specifier = SpecifierSet(spec)
-        if not specifier.contains(resolved_version):
-            alt = _resolve_version(data.get("releases", {}), spec)
-            if alt is None:
+        if specifier.contains(latest_version):
+            resolved_version = latest_version
+        else:
+            resolved_version = _resolve_version(releases, spec)
+            if resolved_version is None:
                 log.warning("%s✗ %s  (no version matching %s)", indent, name, spec)
                 print(f"{indent}  ✗ {name}  (no version matching {spec})")
                 return None
-            log.debug("version mismatch: latest=%s, using alt=%s", resolved_version, alt)
-            resolved_version = alt
-            data, _ = fetch_package(name, resolved_version, use_cache)
+            log.debug("latest %s does not satisfy %s, resolved to %s", latest_version, spec, resolved_version)
+    else:
+        resolved_version = latest_version
 
     key = name.lower()
     if key in seen:
@@ -271,7 +273,8 @@ def get_package_info(
         return None
     seen.add(key)
 
-    best_file = _best_file(data.get("urls", []))
+    files     = releases.get(resolved_version, [])
+    best_file = _best_file(files)
     size      = best_file["size"]     if best_file else 0
     filename  = best_file["filename"] if best_file else "N/A"
 
@@ -356,7 +359,6 @@ def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> N
     req     = Requirement(package_spec)
     name    = req.name
     spec    = str(req.specifier)
-    version = spec[2:] if spec.startswith("==") else None
 
     log.info("starting  package=%s  spec=%s  solo=%s  cache=%s", name, spec or "latest", solo, use_cache)
     log.debug("cache dir: %s", _cache_dir())
@@ -365,7 +367,7 @@ def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> N
     cache_note = "  (cache disabled)" if not use_cache else ""
     print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
 
-    pkg = get_package_info(name=name, version=version, spec=spec, solo=solo, use_cache=use_cache)
+    pkg = get_package_info(name=name, spec=spec, solo=solo, use_cache=use_cache)
 
     if pkg is None:
         print("\n❌ Could not resolve package.")
