@@ -33,9 +33,9 @@ from packaging.version import Version
 log = logging.getLogger("pip_size")
 
 PYPI_JSON_API     = "https://pypi.org/pypi/{package}/json"
-PYPI_VER_API      = "https://pypi.org/pypi/{package}/{version}/json"
 CACHE_TTL_SECONDS = 24 * 60 * 60
 
+# ordered dict of {tag_str: priority} for this interpreter/platform, mirroring pip's preference
 SUPPORTED_TAGS = {str(t): i for i, t in enumerate(sys_tags())}
 
 
@@ -56,7 +56,9 @@ def _cache_dir() -> Path:
 
 
 def _cache_path(url: str) -> Path:
-    safe = url.replace("https://pypi.org/pypi/", "").replace("/", "_")
+    # strip the common prefix and replace slashes to get a safe filename
+    # e.g. https://pypi.org/pypi/requests/json  ->  requests.json
+    safe = url.replace("https://pypi.org/pypi/", "").replace("/json", "").replace("/", "_")
     return _cache_dir() / f"{safe}.json"
 
 
@@ -138,14 +140,16 @@ def _parse_wheel_tag(filename: str) -> tuple[str, str, str] | None:
     parts = filename[:-4].split("-")
     if len(parts) < 5:
         return None
+    # last three parts are always python-abi-platform
     return parts[-3], parts[-2], parts[-1]
 
 
 def _wheel_priority(filename: str) -> int:
     """
-    Return the priority of a wheel for this platform.
-    Lower = better (follows sys_tags ordering).
-    Returns sys.maxsize if the wheel is not compatible.
+    Return the priority of a wheel for this platform (lower = better).
+    Each tag component can be dot-separated (e.g. cp311.cp310-abi3-linux_x86_64),
+    so we check all combinations against SUPPORTED_TAGS.
+    Returns sys.maxsize if no compatible tag is found.
     """
     tags = _parse_wheel_tag(filename)
     if tags is None:
@@ -166,23 +170,26 @@ def _wheel_priority(filename: str) -> int:
 
 def _best_file(files: list[dict]) -> dict | None:
     """
-    Pick the best compatible file for this platform.
-    Prefers wheels over sdist, picks the highest-priority wheel.
+    Pick the best compatible distribution file for this platform.
+    Wheels are preferred over sdist; among wheels the one with the lowest
+    priority index (i.e. closest match in sys_tags) wins.
     """
     env = default_environment()
     compatible = []
     for f in files:
+        # skip files that require a python version we don't have
         requires_python = f.get("requires_python")
         if requires_python:
             if not SpecifierSet(requires_python).contains(env["python_version"]):
                 log.debug("skip  %s  (requires_python %s)", f["filename"], requires_python)
                 continue
+
         if f["filename"].endswith(".whl"):
             priority = _wheel_priority(f["filename"])
             if priority < sys.maxsize:
-                compatible.append((0, priority, f))
+                compatible.append((0, priority, f))  # 0 = wheel (preferred over sdist)
         else:
-            compatible.append((1, 0, f))
+            compatible.append((1, 0, f))             # 1 = sdist (last resort)
 
     if not compatible:
         return None
@@ -200,13 +207,14 @@ def _best_file(files: list[dict]) -> dict | None:
 class PackageInfo:
     name:         str
     version:      str
-    size:         int
-    filename:     str
+    size:         int                # bytes of the chosen distribution file
+    filename:     str                # e.g. requests-2.31.0-py3-none-any.whl
+    via_extra:    str | None = None  # set when this dep was pulled in by an extra marker
     dependencies: list["PackageInfo"] = field(default_factory=list)
 
 
 def _resolve_version(releases: dict, specifier_str: str) -> str | None:
-    """Pick the latest stable version matching the specifier."""
+    """Pick the latest stable version that satisfies specifier_str."""
     spec     = SpecifierSet(specifier_str, prereleases=False)
     versions = sorted(
         (Version(v) for v in releases if not Version(v).is_prerelease),
@@ -219,25 +227,33 @@ def _resolve_version(releases: dict, specifier_str: str) -> str | None:
 
 
 def fetch_package(name: str, use_cache: bool = True) -> tuple[dict, str]:
-    """Fetch PyPI JSON (latest) and return (data, latest_version). Always exactly one request per package."""
+    """
+    Fetch the PyPI JSON for a package (always the /pypi/{name}/json endpoint).
+    Returns (full_data, latest_version). Exactly one HTTP request per package.
+    Version resolution for older releases is done from data["releases"] — no second request.
+    """
     data = _fetch_json(PYPI_JSON_API.format(package=name), use_cache)
     return data, data["info"]["version"]
 
 
 def get_package_info(
     name:      str,
-    version:   str | None = None,
-    spec:      str        = "",
-    extras:    set[str]   | None = None,
-    seen:      set | None = None,
-    solo:      bool       = False,
-    use_cache: bool       = True,
-    depth:     int        = 0,
+    version:   str | None    = None,
+    spec:      str           = "",
+    extras:    set[str] | None = None,
+    seen:      set | None    = None,
+    solo:      bool          = False,
+    use_cache: bool          = True,
+    depth:     int           = 0,
 ) -> PackageInfo | None:
     """
-    Recursively resolve a package and its dependencies.
-    Uses PyPI JSON API only — zero downloads. Always exactly one request per package.
-    extras: set of active extras (e.g. {"dev", "security"}) — used for marker evaluation.
+    Recursively fetch and resolve a package and all its dependencies.
+
+    - version : if provided, pins to an exact version (skips specifier logic)
+    - spec    : PEP 440 specifier string, e.g. ">=2.0,<3"
+    - extras  : active extras from the parent requirement, e.g. {"security"}
+    - seen    : set of already-resolved package names (guards against cycles)
+    - solo    : if True, skip dependency resolution
     """
     if seen is None:
         seen = set()
@@ -252,6 +268,7 @@ def get_package_info(
         print(f"{indent}  ✗ {name}  (error: {e})")
         return None
 
+    # pick the right version — all info lives in data["releases"], no second fetch needed
     releases = data.get("releases", {})
     if version:
         resolved_version = version
@@ -269,6 +286,7 @@ def get_package_info(
     else:
         resolved_version = latest_version
 
+    # deduplicate: skip if we already resolved this package in this run
     key = name.lower()
     if key in seen:
         log.debug("skip  %s==%s  (already resolved)", name, resolved_version)
@@ -300,10 +318,13 @@ def get_package_info(
             log.debug("could not parse requirement %r: %s", req_str, e)
             continue
 
+        # evaluate the marker against each active extra; include the dep if any matches
+        triggered_by: str | None = None
         if req.marker:
             for extra in (active_extras or {None}):
                 marker_env = {**env, "extra": extra} if extra else env
                 if req.marker.evaluate(marker_env):
+                    triggered_by = extra  # remember which extra unlocked this dep
                     break
             else:
                 log.debug("skip  %s  (marker not satisfied for extras=%s: %s)", req.name, active_extras, req.marker)
@@ -320,6 +341,7 @@ def get_package_info(
             depth     = depth + 1,
         )
         if dep:
+            dep.via_extra = triggered_by
             pkg.dependencies.append(dep)
 
     return pkg
@@ -348,7 +370,8 @@ def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_roo
     else:
         connector    = "└── " if is_last else "├── "
         child_prefix = prefix + ("    " if is_last else "│   ")
-        print(f"{prefix}{connector}{pkg.name}=={pkg.version}  {_format_size(pkg.size)}")
+        extra_tag = f"  [extra: {pkg.via_extra}]" if pkg.via_extra else ""
+        print(f"{prefix}{connector}{pkg.name}=={pkg.version}  {_format_size(pkg.size)}{extra_tag}")
 
     for i, dep in enumerate(pkg.dependencies):
         _print_tree(
@@ -362,9 +385,9 @@ def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_roo
 
 
 def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> None:
-    req     = Requirement(package_spec)
-    name    = req.name
-    spec    = str(req.specifier)
+    req  = Requirement(package_spec)
+    name = req.name
+    spec = str(req.specifier)
 
     log.info("starting  package=%s  spec=%s  solo=%s  cache=%s", name, spec or "latest", solo, use_cache)
     log.debug("cache dir: %s", _cache_dir())
@@ -373,7 +396,13 @@ def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> N
     cache_note = "  (cache disabled)" if not use_cache else ""
     print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
 
-    pkg = get_package_info(name=name, spec=spec, extras=set(req.extras) if req.extras else None, solo=solo, use_cache=use_cache)
+    pkg = get_package_info(
+        name      = name,
+        spec      = spec,
+        extras    = set(req.extras) if req.extras else None,
+        solo      = solo,
+        use_cache = use_cache,
+    )
 
     if pkg is None:
         print("\n❌ Could not resolve package.")
