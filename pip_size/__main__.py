@@ -228,6 +228,7 @@ def get_package_info(
     name:      str,
     version:   str | None = None,
     spec:      str        = "",
+    extras:    set[str]   | None = None,
     seen:      set | None = None,
     solo:      bool       = False,
     use_cache: bool       = True,
@@ -236,6 +237,7 @@ def get_package_info(
     """
     Recursively resolve a package and its dependencies.
     Uses PyPI JSON API only — zero downloads. Always exactly one request per package.
+    extras: set of active extras (e.g. {"dev", "security"}) — used for marker evaluation.
     """
     if seen is None:
         seen = set()
@@ -287,6 +289,7 @@ def get_package_info(
         return pkg
 
     env           = default_environment()
+    active_extras = extras or set()
     requires_dist = data["info"].get("requires_dist") or []
     log.debug("%s%d dependencies declared", indent, len(requires_dist))
 
@@ -297,17 +300,20 @@ def get_package_info(
             log.debug("could not parse requirement %r: %s", req_str, e)
             continue
 
-        if req.marker and not req.marker.evaluate(env):
-            log.debug("skip  %s  (marker not satisfied: %s)", req.name, req.marker)
-            continue
-
-        if req.extras:
-            log.debug("note: %s has extras %s (not resolved separately)", req.name, req.extras)
+        if req.marker:
+            for extra in (active_extras or {None}):
+                marker_env = {**env, "extra": extra} if extra else env
+                if req.marker.evaluate(marker_env):
+                    break
+            else:
+                log.debug("skip  %s  (marker not satisfied for extras=%s: %s)", req.name, active_extras, req.marker)
+                continue
 
         dep = get_package_info(
             name      = req.name,
             version   = None,
             spec      = str(req.specifier),
+            extras    = set(req.extras) if req.extras else None,
             seen      = seen,
             solo      = False,
             use_cache = use_cache,
@@ -367,7 +373,7 @@ def pip_size(package_spec: str, solo: bool = False, use_cache: bool = True) -> N
     cache_note = "  (cache disabled)" if not use_cache else ""
     print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
 
-    pkg = get_package_info(name=name, spec=spec, solo=solo, use_cache=use_cache)
+    pkg = get_package_info(name=name, spec=spec, extras=set(req.extras) if req.extras else None, solo=solo, use_cache=use_cache)
 
     if pkg is None:
         print("\n❌ Could not resolve package.")
