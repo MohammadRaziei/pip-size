@@ -43,6 +43,9 @@ pip-size requests --json
 
 # Quiet mode (only total size)
 pip-size requests --quiet
+
+# Use in shell scripts
+echo "requests size: $(pip-size requests --quiet)"
 ```
 
 ### Example Output
