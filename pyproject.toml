@@ -26,12 +26,15 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
 dependencies = []
 
+[project.scripts]
+pip-size = "pip_size.__main__:main"
 
 [project.urls]
 Source = "https://github.com/mohammadraziei/pip-size"
@@ -135,7 +138,7 @@ select = [        # List of lint rule codes to enable
 ignore = [
   # Allow non-abstract empty methods in abstract base classes
   "B027",
-  # Allow boolean positional values in function calls, like `dict.get(... True)`
+  # Allow boolean positional values in function calls, like `dict.get(... True)"
   "FBT003",
   # Ignore checks for possible passwords
   "S105", "S106", "S107",
