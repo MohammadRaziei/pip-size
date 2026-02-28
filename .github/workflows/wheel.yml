@@ -75,10 +75,7 @@ jobs:
         run: pip install pytest-cov pytest-xdist pytest-asyncio
 
       - name: Run tests
-        run: |
-          python -m phasma driver download
-          cd tests
-          python -m pytest -v 
+        run: python -m pytest -v 
 
 
   release:
