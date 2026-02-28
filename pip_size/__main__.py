@@ -3,13 +3,13 @@ pip-size: Calculate the real download size of a PyPI package and its dependencie
 No downloads. No pip subprocess. Pure PyPI JSON API + packaging.
 
 Usage:
-    python pip_size.py requests
-    python pip_size.py requests --solo
-    python pip_size.py "requests==2.31.0"
-    python pip_size.py requests --verbose
-    python pip_size.py requests --extra-verbose
-    python pip_size.py requests --no-cache
-    python pip_size.py --clear-cache
+    pip_size requests
+    pip_size requests --no-deps
+    pip_size "requests==2.31.0"
+    pip_size requests --verbose
+    pip_size requests --extra-verbose
+    pip_size requests --no-cache
+    pip_size --clear-cache
 """
 
 import json
