@@ -167,11 +167,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 5. Run the test suite
 6. Submit a pull request
 
-## 📚 Related Projects
+<!-- ## 📚 Related Projects
 
 - [pip](https://pip.pypa.io/) - The Python package installer
 - [pip-api](https://pypi.org/project/pip-api/) - Unofficial pip API
-- [pypi-simple](https://pypi.org/project/pypi-simple/) - PyPI simple API client
+- [pypi-simple](https://pypi.org/project/pypi-simple/) - PyPI simple API client -->
 
 ## 🙏 Acknowledgments
 
