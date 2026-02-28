@@ -449,8 +449,7 @@ def pip_size(package_spec: str, no_deps: bool = False, use_cache: bool = True, q
 
 # ────────────────────────────────────────────────────────────────────
 
-
-if __name__ == "__main__":
+def main():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -533,3 +532,7 @@ if __name__ == "__main__":
         log.error("%s", e)
         print(f"\n❌ Error: {e}")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
