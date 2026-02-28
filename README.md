@@ -148,34 +148,6 @@ $ pip-size requests --json --quiet
 - Preferring wheels over source distributions
 - Using the same priority order as pip
 
-## 🧪 Development
-
-### Setup Development Environment
-
-```bash
-# Clone the repository
-git clone https://github.com/mohammadraziei/pip-size.git
-cd pip-size
-
-# Install in development mode
-pip install -e .
-
-# Run tests
-pytest
-
-# Run linting
-hatch run lint:all
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-hatch run test-cov
-```
 
 ## 📄 License
 
