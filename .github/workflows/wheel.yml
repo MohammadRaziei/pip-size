@@ -106,27 +106,6 @@ jobs:
       - name: List dist directory
         run: tree --du -shaC . # Ensure the directory is not empty
 
-
-      - name: Delete release assets
-        uses: actions/github-script@v6
-        if: ${{ env.IS_TAG == 'false' }}
-        with:
-          script: |
-            const releaseId = context.payload.release.id;
-            const assets = await github.rest.repos.listReleaseAssets({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: releaseId
-            });
-            
-            for (const asset of assets.data) {
-              await github.rest.repos.deleteReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                asset_id: asset.id
-              });
-            }
-
       - name: Create or update release
         id: create_release
         uses: softprops/action-gh-release@v2
