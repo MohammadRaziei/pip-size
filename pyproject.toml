@@ -31,7 +31,9 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
-dependencies = []
+dependencies = [
+  "packaging"
+]
 
 [project.scripts]
 pip-size = "pip_size.__main__:main"
