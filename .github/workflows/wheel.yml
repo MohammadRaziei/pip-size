@@ -1,4 +1,4 @@
-name: Build PhantomJS Wheels
+name: Build Wheels
 
 on:
   workflow_dispatch:
