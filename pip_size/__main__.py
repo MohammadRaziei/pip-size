@@ -11,6 +11,17 @@ Usage:
     pip-size "requests" --extra-verbose
     pip-size "requests" --no-cache
     pip-size --clear-cache
+
+Proxy support:
+    # HTTP proxy via flag
+    pip-size "requests" --proxy http://user:pass@host:8080
+
+    # SOCKS5 proxy via flag  (requires: pip install aiohttp-socks)
+    pip-size "requests" --proxy socks5://user:pass@host:1080
+
+    # Via environment variables (flag takes precedence)
+    HTTP_PROXY=http://host:8080  pip-size "requests"
+    ALL_PROXY=socks5://host:1080 pip-size "requests"
 """
 
 import asyncio
@@ -25,6 +36,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import aiohttp
+
+# aiohttp-socks is optional — only needed for socks4/socks5 proxies
+try:
+    from aiohttp_socks import ProxyConnector as _SocksProxyConnector
+    _SOCKS_AVAILABLE = True
+except ImportError:
+    _SocksProxyConnector = None  # type: ignore[assignment,misc]
+    _SOCKS_AVAILABLE = False
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -110,16 +129,17 @@ async def _fetch_json_async(
     url: str,
     sem: asyncio.Semaphore,
     use_cache: bool = True,
+    proxy: str | None = None,
 ) -> dict:
     if use_cache:
         cached = _cache_read(url)
         if cached is not None:
             return cached
 
-    log.debug("GET %s", url)
+    log.debug("GET %s%s", url, f"  (proxy: {proxy})" if proxy else "")
     async with sem:
         try:
-            async with session.get(url) as resp:
+            async with session.get(url, proxy=proxy) as resp:
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status}: {resp.reason}  ({url})")
                 data = await resp.json(content_type=None)
@@ -212,6 +232,53 @@ def _resolve_version(releases: dict, specifier_str: str) -> str | None:
     return None
 
 
+# ───────────────────────────── proxy ────────────────────────────────
+
+
+def _resolve_proxy(proxy_flag: str | None) -> str | None:
+    """
+    Return the proxy URL to use, with this priority:
+      1. --proxy flag
+      2. HTTPS_PROXY / HTTP_PROXY env var  (for HTTP proxies)
+      3. ALL_PROXY / SOCKS_PROXY env var   (catches socks:// schemes too)
+    Returns None if no proxy is configured.
+    """
+    if proxy_flag:
+        return proxy_flag
+    for var in ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "SOCKS_PROXY",
+                "https_proxy", "http_proxy", "all_proxy", "socks_proxy"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    return None
+
+
+def _make_connector(proxy_url: str | None, limit: int) -> aiohttp.BaseConnector:
+    """
+    Build the appropriate aiohttp connector for the given proxy URL.
+
+    - No proxy              → plain TCPConnector
+    - http:// / https://    → plain TCPConnector  (proxy passed per-request)
+    - socks4:// / socks5:// → SocksProxyConnector (requires aiohttp-socks)
+    """
+    if proxy_url is None:
+        return aiohttp.TCPConnector(limit=limit)
+
+    scheme = proxy_url.split("://")[0].lower()
+    if scheme in ("socks4", "socks5", "socks5h"):
+        if not _SOCKS_AVAILABLE:
+            raise RuntimeError(
+                f"SOCKS proxy requested ({proxy_url!r}) but 'aiohttp-socks' is not installed.\n"
+                "  Fix: pip install aiohttp-socks"
+            )
+        log.debug("using SOCKS connector  url=%s", proxy_url)
+        return _SocksProxyConnector.from_url(proxy_url, limit=limit)
+
+    # http / https proxy — use plain connector; proxy is passed per-request
+    log.debug("using HTTP proxy  url=%s", proxy_url)
+    return aiohttp.TCPConnector(limit=limit)
+
+
 # ───────────────────────────── BFS resolver ─────────────────────────
 
 
@@ -227,11 +294,12 @@ class _QueueItem:
 
 
 async def _resolve_bfs(
-    root_req:        Requirement,
-    no_deps:         bool,
+    root_req:         Requirement,
+    no_deps:          bool,
     include_optional: bool,
-    use_cache:       bool,
-    quiet:           bool,
+    use_cache:        bool,
+    quiet:            bool,
+    proxy_url:        str | None = None,
 ) -> PackageInfo | None:
     """
     BFS over the dependency graph.
@@ -242,11 +310,17 @@ async def _resolve_bfs(
     Optional dependencies (those only reachable via an `extra` marker and
     not explicitly requested) are skipped unless --optional-deps is set.
     """
-    env = default_environment()
-    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+    env       = default_environment()
+    sem       = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    connector = aiohttp.TCPConnector(limit=MAX_CONCURRENCY)
+    connector = _make_connector(proxy_url, limit=MAX_CONCURRENCY)
     headers   = {"User-Agent": "pip-size/1.0", "Accept": "application/json"}
+
+    # For SOCKS connectors the proxy is baked into the connector itself;
+    # for HTTP proxies we pass it as a per-request kwarg.
+    scheme         = (proxy_url or "").split("://")[0].lower()
+    is_socks_proxy = scheme in ("socks4", "socks5", "socks5h")
+    request_proxy  = None if (proxy_url is None or is_socks_proxy) else proxy_url
 
     async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
 
@@ -271,7 +345,7 @@ async def _resolve_bfs(
             url    = PYPI_JSON_API.format(package=item.name)
 
             try:
-                data = await _fetch_json_async(session, url, sem, use_cache)
+                data = await _fetch_json_async(session, url, sem, use_cache, proxy=request_proxy)
             except RuntimeError as e:
                 log.warning("%s✗ %s  (%s)", indent, item.name, e)
                 if not quiet:
@@ -473,12 +547,16 @@ async def pip_size_async(
     quiet:            bool = False,
     as_bytes:         bool = False,
     as_json:          bool = False,
+    proxy:            str | None = None,
 ) -> None:
-    req  = Requirement(package_spec)
+    req = Requirement(package_spec)
+
+    proxy_url = _resolve_proxy(proxy)
 
     log.info(
-        "starting  package=%s  spec=%s  no_deps=%s  optional=%s  cache=%s",
+        "starting  package=%s  spec=%s  no_deps=%s  optional=%s  cache=%s  proxy=%s",
         req.name, str(req.specifier) or "latest", no_deps, include_optional, use_cache,
+        proxy_url or "none",
     )
     log.debug("cache dir: %s", _cache_dir())
     log.debug("platform tags (top 5): %s", list(SUPPORTED_TAGS.keys())[:5])
@@ -486,7 +564,8 @@ async def pip_size_async(
     if not quiet:
         cache_note    = "  (cache disabled)" if not use_cache else ""
         optional_note = "  (including optional deps)" if include_optional else ""
-        print(f"\n🔍 Resolving '{package_spec}'...{cache_note}{optional_note}")
+        proxy_note    = f"  (proxy: {proxy_url})" if proxy_url else ""
+        print(f"\n🔍 Resolving '{package_spec}'...{cache_note}{optional_note}{proxy_note}")
 
     pkg = await _resolve_bfs(
         root_req         = req,
@@ -494,6 +573,7 @@ async def pip_size_async(
         include_optional = include_optional,
         use_cache        = use_cache,
         quiet            = quiet,
+        proxy_url        = proxy_url,
     )
 
     if pkg is None:
@@ -522,6 +602,7 @@ def pip_size(
     quiet:            bool = False,
     as_bytes:         bool = False,
     as_json:          bool = False,
+    proxy:            str | None = None,
 ) -> None:
     asyncio.run(pip_size_async(
         package_spec     = package_spec,
@@ -531,6 +612,7 @@ def pip_size(
         quiet            = quiet,
         as_bytes         = as_bytes,
         as_json          = as_json,
+        proxy            = proxy,
     ))
 
 
@@ -582,6 +664,18 @@ def main() -> None:
         help="Bypass cache and always fetch fresh data from PyPI.",
     )
     parser.add_argument(
+        "--proxy",
+        metavar="URL",
+        default=None,
+        help=(
+            "Proxy URL to use for all PyPI requests.  Overrides HTTP_PROXY / ALL_PROXY env vars.\n"
+            "  HTTP:   --proxy http://user:pass@host:8080\n"
+            "  HTTPS:  --proxy https://host:8080\n"
+            "  SOCKS5: --proxy socks5://user:pass@host:1080  (requires: pip install aiohttp-socks)\n"
+            "  SOCKS4: --proxy socks4://host:1080            (requires: pip install aiohttp-socks)"
+        ),
+    )
+    parser.add_argument(
         "--clear-cache",
         action="store_true",
         help=f"Delete all cached PyPI responses and exit.  (cache dir: {_cache_dir()})",
@@ -631,6 +725,7 @@ def main() -> None:
             quiet            = args.quiet,
             as_bytes         = args.bytes,
             as_json          = args.json,
+            proxy            = args.proxy,
         )
     except RuntimeError as e:
         log.error("%s", e)
