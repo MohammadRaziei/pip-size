@@ -258,7 +258,12 @@ class WheelSelector:
         for f in files:
             requires_python = f.get("requires_python")
             if requires_python:
-                if not SpecifierSet(requires_python).contains(cls._ENV["python_version"]):
+                try:
+                    spec = SpecifierSet(requires_python)
+                except Exception:
+                    log.debug("skip  %s  (unparseable requires_python %r)", f["filename"], requires_python)
+                    continue
+                if not spec.contains(cls._ENV["python_version"]):
                     log.debug("skip  %s  (requires_python %s)", f["filename"], requires_python)
                     continue
 
