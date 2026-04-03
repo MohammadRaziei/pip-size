@@ -485,30 +485,57 @@ class DependencyResolver:
 
     def _evaluate_marker(self, req: Requirement, active_extras: set[str]) -> object:
         """
+        Decides whether a dependency should be included, and under which extra (if any).
+
         Returns:
-          None            — no marker, or satisfied without an extra
-          "<extra_name>"  — pulled in by this specific extra
-          _SKIP sentinel  — should be excluded
+          None            — no marker, or non-extra marker satisfied by the environment
+          "<extra_name>"  — dep is pulled in by this specific extra
+          _SKIP sentinel  — dep should be excluded
+
+        Rules
+        ─────
+        Non-optional dep  (marker has no `extra` condition):
+          → include if the marker is satisfied by the base environment, else skip.
+
+        Optional dep  (marker contains `extra == "..."`):
+          → WITHOUT --include-optional:
+               include only if one of the *explicitly requested* active_extras satisfies it.
+          → WITH --include-optional:
+               always include; use the extra name found in the marker as the label,
+               or fall back to the first active_extra that satisfies it.
         """
         if not req.marker:
             return None
 
-        is_optional = "extra" in str(req.marker)
-
-        if is_optional and not self._include_optional:
-            for extra in active_extras:
-                if req.marker.evaluate({**self._ENV, "extra": extra}):
-                    return extra
-            log.debug("skip  %s  (optional; use --include-optional)", req.name)
+        # ── non-optional marker (no `extra` condition) ────────────────
+        if "extra" not in str(req.marker):
+            if req.marker.evaluate(self._ENV):
+                return None
+            log.debug("skip  %s  (marker not satisfied: %s)", req.name, req.marker)
             return _SKIP
 
-        if req.marker.evaluate(self._ENV):
-            return None
+        # ── optional marker ───────────────────────────────────────────
+        # First check: is it satisfied by any of the *active* (explicitly requested) extras?
         for extra in active_extras:
             if req.marker.evaluate({**self._ENV, "extra": extra}):
-                return extra
-        log.debug("skip  %s  (marker not satisfied for extras=%s)", req.name, active_extras)
-        return _SKIP
+                return extra   # always include when explicitly requested
+
+        # Not satisfied by active_extras.
+        if not self._include_optional:
+            log.debug("skip  %s  (optional; use --include-optional to include all)", req.name)
+            return _SKIP
+
+        # --include-optional: include it and find which extra name gates it.
+        extra_label = self._extract_extra_name(req) or "optional"
+        log.debug("include  %s  (optional via extra=%s)", req.name, extra_label)
+        return extra_label
+
+    @staticmethod
+    def _extract_extra_name(req: Requirement) -> str | None:
+        """Pull the extra name out of a marker like `extra == "security"`."""
+        import re
+        match = re.search(r'extra\s*==\s*["\']([^"\']+)["\']', str(req.marker))
+        return match.group(1) if match else None
 
 
 # ─────────────────────────────────────────────────────────────────────
