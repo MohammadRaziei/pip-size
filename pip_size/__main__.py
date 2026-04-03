@@ -6,7 +6,7 @@ Usage:
     pip-size "requests"
     pip-size "requests" --no-deps
     pip-size "requests==2.31.0"
-    pip-size "requests" --optional-deps
+    pip-size "requests" --include-optional
     pip-size "requests" --verbose
     pip-size "requests" --extra-verbose
     pip-size "requests" --no-cache
@@ -418,7 +418,7 @@ async def _resolve_bfs(
                                 break
                         if triggered_by is None:
                             log.debug(
-                                "skip  %s  (optional dep, use --optional-deps to include: %s)",
+                                "skip  %s  (optional dep, use --include-optional to include: %s)",
                                 req.name, req.marker,
                             )
                             continue
@@ -636,7 +636,7 @@ def main() -> None:
         help="Show size of the package itself only, without resolving dependencies.",
     )
     parser.add_argument(
-        "--optional-deps",
+        "--include-optional",
         action="store_true",
         help=(
             "Include optional dependencies (those gated behind an `extra` marker). "
@@ -720,7 +720,7 @@ def main() -> None:
         pip_size(
             args.package,
             no_deps          = args.no_deps,
-            include_optional = args.optional_deps,
+            include_optional = args.include_optional,
             use_cache        = not args.no_cache,
             quiet            = args.quiet,
             as_bytes         = args.bytes,

@@ -32,8 +32,12 @@ classifiers = [
 ]
 
 dependencies = [
-  "packaging"
+  "packaging", "aiohttp>=3.8.0",
 ]
+
+optional-dependencies = { 
+  "socks" = ["aiohttp-socks"],
+}
 
 [project.scripts]
 pip-size = "pip_size.__main__:main"
