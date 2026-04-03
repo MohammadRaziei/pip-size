@@ -22,9 +22,11 @@ Proxy support:
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import time
@@ -331,23 +333,31 @@ class DependencyResolver:
 
     def __init__(
         self,
-        client:           PyPIClient,
-        include_optional: bool = False,
-        no_deps:          bool = False,
-        quiet:            bool = False,
+        client:         PyPIClient,
+        all_extras:     bool            = False,
+        extras_filter:  set[str] | None = None,
+        no_deps:        bool            = False,
+        quiet:          bool            = False,
     ) -> None:
-        self._client           = client
-        self._include_optional = include_optional
-        self._no_deps          = no_deps
-        self._quiet            = quiet
+        self._client        = client
+        self._all_extras    = all_extras
+        self._extras_filter = extras_filter   # glob patterns for root-level extras
+        self._no_deps       = no_deps
+        self._quiet         = quiet
         self._seen:     set[str]               = set()
         self._resolved: dict[str, PackageInfo] = {}
 
     async def resolve(self, req: Requirement) -> PackageInfo | None:
+        # Merge explicit extras from the requirement (e.g. pkg[test])
+        # with any extras matched by --extras filter patterns.
+        req_extras     = set(req.extras) if req.extras else set()
+        filter_extras  = self._match_filter_extras(req, self._extras_filter)
+        root_extras    = req_extras | filter_extras or None
+
         root = _WorkItem(
             name      = req.name,
             spec      = str(req.specifier),
-            extras    = set(req.extras) if req.extras else None,
+            extras    = root_extras,
             via_extra = None,
             parent    = None,
             depth     = 0,
@@ -357,6 +367,19 @@ class DependencyResolver:
             results = await asyncio.gather(*[self._process(item) for item in layer])
             layer   = [item for next_layer in results for item in next_layer]
         return self._resolved.get(req.name.lower())
+
+    @staticmethod
+    def _match_filter_extras(req: Requirement, patterns: set[str] | None) -> set[str]:
+        """
+        Given a set of glob patterns (e.g. {"test", "dev*", "*"}), fetch the package's
+        declared extras from PyPI data and return those that match any pattern.
+        Because we don't have PyPI data at this point, we just return the patterns
+        themselves as literal extras — they'll be evaluated against markers later.
+        Glob wildcards that match nothing are silently ignored during marker evaluation.
+        """
+        if not patterns:
+            return set()
+        return set(patterns)
 
     # ── internal ─────────────────────────────────────────────────────
 
@@ -499,21 +522,17 @@ class DependencyResolver:
 
         Rules
         ─────
-        Non-optional dep (marker has no `extra` condition):
-          → include only if the marker is satisfied by the base environment.
+        Non-optional dep (no `extra` in marker):
+          → include if marker is satisfied by the base environment.
 
-        Optional dep (marker contains `extra == "..."`):
-          The `active_extras` only represent the extras explicitly requested FOR THIS
-          PACKAGE (from its parent's requires_dist entry, e.g. `fastapi[standard]`).
-          They do NOT propagate to grandchildren.
+        Optional dep (`extra == "..."` in marker):
+          active_extras belong only to THIS package level — they do not propagate down.
 
-          → Check each active_extra. If the full marker (env + extra) is satisfied
-            → include, labelled with that extra name.
-          → If none of the active_extras satisfy it:
-              - WITHOUT --include-optional → skip.
-              - WITH    --include-optional → include anyway, labelled with the extra
-                name extracted from the marker, but ONLY if the non-extra part of
-                the marker (platform, python_version, etc.) is also satisfied.
+          1. Check if any active_extra (exact or glob) satisfies the marker → include.
+          2. If none match:
+               - WITHOUT --all-extras → skip.
+               - WITH    --all-extras → include if platform/python conditions are also
+                 met; label with the extra name extracted from the marker.
         """
         if not req.marker:
             return None
@@ -528,20 +547,23 @@ class DependencyResolver:
             return _SKIP
 
         # ── optional marker ───────────────────────────────────────────
-        # Check against each explicitly-requested extra for this package.
-        for extra in active_extras:
-            if req.marker.evaluate({**self._ENV, "extra": extra}):
-                return extra
+        # The extra name declared in the marker (e.g. "security").
+        marker_extra = self._extract_extra_name(req)
 
-        # No active extra satisfies it.
-        if not self._include_optional:
-            log.debug("skip  %s  (optional; use --include-optional to include all)", req.name)
+        # Check active_extras with glob matching.
+        for pattern in active_extras:
+            if marker_extra and fnmatch.fnmatch(marker_extra, pattern):
+                # Verify the full marker (including any platform conditions) is met.
+                if req.marker.evaluate({**self._ENV, "extra": marker_extra}):
+                    return marker_extra
+
+        # No active extra matched.
+        if not self._all_extras:
+            log.debug("skip  %s  (optional; use --all-extras to include all)", req.name)
             return _SKIP
 
-        # --include-optional: include if the non-extra conditions are met.
-        extra_label = self._extract_extra_name(req) or "optional"
-        # Verify the rest of the marker (python_version, platform, etc.) is satisfied
-        # by evaluating with the extracted extra injected into the environment.
+        # --all-extras: include if non-extra conditions are also satisfied.
+        extra_label = marker_extra or "optional"
         if not req.marker.evaluate({**self._ENV, "extra": extra_label}):
             log.debug(
                 "skip  %s  (optional extra=%s but platform/version conditions not met)",
@@ -549,13 +571,12 @@ class DependencyResolver:
             )
             return _SKIP
 
-        log.debug("include  %s  (optional via --include-optional, extra=%s)", req.name, extra_label)
+        log.debug("include  %s  (via --all-extras, extra=%s)", req.name, extra_label)
         return extra_label
 
     @staticmethod
     def _extract_extra_name(req: Requirement) -> str | None:
         """Pull the extra name out of a marker like `extra == "security"`."""
-        import re
         match = re.search(r'extra\s*==\s*["\']([^"\']+)["\']', str(req.marker))
         return match.group(1) if match else None
 
@@ -632,21 +653,23 @@ class PipSize:
 
     def __init__(
         self,
-        no_deps:          bool       = False,
-        include_optional: bool       = False,
-        use_cache:        bool       = True,
-        proxy:            str | None = None,
-        quiet:            bool       = False,
-        as_bytes:         bool       = False,
-        as_json:          bool       = False,
+        no_deps:        bool            = False,
+        all_extras:     bool            = False,
+        extras_filter:  set[str] | None = None,
+        use_cache:      bool            = True,
+        proxy:          str | None      = None,
+        quiet:          bool            = False,
+        as_bytes:       bool            = False,
+        as_json:        bool            = False,
     ) -> None:
-        self.no_deps          = no_deps
-        self.include_optional = include_optional
-        self.use_cache        = use_cache
-        self.proxy            = proxy
-        self.quiet            = quiet
-        self.as_bytes         = as_bytes
-        self.as_json          = as_json
+        self.no_deps       = no_deps
+        self.all_extras    = all_extras
+        self.extras_filter = extras_filter
+        self.use_cache     = use_cache
+        self.proxy         = proxy
+        self.quiet         = quiet
+        self.as_bytes      = as_bytes
+        self.as_json       = as_json
 
     def run(self, package_spec: str) -> None:
         asyncio.run(self.run_async(package_spec))
@@ -659,9 +682,11 @@ class PipSize:
         self._print_header(package_spec, client)
 
         log.info(
-            "starting  package=%s  spec=%s  no_deps=%s  optional=%s  cache=%s  proxy=%s",
+            "starting  package=%s  spec=%s  no_deps=%s  all_extras=%s  "
+            "extras_filter=%s  cache=%s  proxy=%s",
             req.name, str(req.specifier) or "latest",
-            self.no_deps, self.include_optional, self.use_cache,
+            self.no_deps, self.all_extras,
+            self.extras_filter, self.use_cache,
             client.proxy_url or "none",
         )
         log.debug("cache dir: %s", Cache.directory())
@@ -669,10 +694,11 @@ class PipSize:
 
         async with client:
             resolver = DependencyResolver(
-                client           = client,
-                include_optional = self.include_optional,
-                no_deps          = self.no_deps,
-                quiet            = self.quiet,
+                client        = client,
+                all_extras    = self.all_extras,
+                extras_filter = self.extras_filter,
+                no_deps       = self.no_deps,
+                quiet         = self.quiet,
             )
             pkg = await resolver.resolve(req)
 
@@ -696,8 +722,10 @@ class PipSize:
         notes = []
         if not self.use_cache:
             notes.append("cache disabled")
-        if self.include_optional:
-            notes.append("including optional deps")
+        if self.all_extras:
+            notes.append("all extras")
+        if self.extras_filter:
+            notes.append(f"extras: {', '.join(sorted(self.extras_filter))}")
         if client.proxy_url:
             notes.append(f"proxy: {client.proxy_url}")
         suffix = f"  ({', '.join(notes)})" if notes else ""
@@ -725,11 +753,26 @@ def main() -> None:
         help="Show size of the package itself only, without resolving dependencies.",
     )
     parser.add_argument(
-        "--include-optional",
+        "-a", "--all-extras",
         action="store_true",
         help=(
-            "Include optional dependencies (those gated behind an `extra` marker). "
-            "By default these are skipped unless you requested that extra explicitly."
+            "Include ALL optional dependencies (extra-gated) across the entire "
+            "dependency tree. Each one is labelled [extra: <name>] in the output."
+        ),
+    )
+    parser.add_argument(
+        "--extras",
+        metavar="PATTERNS",
+        default=None,
+        help=(
+            "Comma-separated glob patterns selecting which extras to activate for "
+            "the ROOT package only (same as writing pkg[extra1,extra2] on the CLI, "
+            "but supports wildcards).\n"
+            "  --extras test          # exactly 'test'\n"
+            "  --extras 'test,dev'    # 'test' and 'dev'\n"
+            "  --extras 'dev*'        # anything starting with 'dev'\n"
+            "  --extras '*'           # every extra on the root package\n"
+            "Can be combined with --all-extras."
         ),
     )
     parser.add_argument(
@@ -799,14 +842,19 @@ def main() -> None:
         parser.error("the following arguments are required: package")
 
     try:
+        extras_filter: set[str] | None = None
+        if args.extras:
+            extras_filter = {p.strip() for p in args.extras.split(",") if p.strip()}
+
         PipSize(
-            no_deps          = args.no_deps,
-            include_optional = args.include_optional,
-            use_cache        = not args.no_cache,
-            proxy            = args.proxy,
-            quiet            = args.quiet,
-            as_bytes         = args.bytes,
-            as_json          = args.json,
+            no_deps       = args.no_deps,
+            all_extras    = args.all_extras,
+            extras_filter = extras_filter,
+            use_cache     = not args.no_cache,
+            proxy         = args.proxy,
+            quiet         = args.quiet,
+            as_bytes      = args.bytes,
+            as_json       = args.json,
         ).run(args.package)
     except RuntimeError as exc:
         log.error("%s", exc)
