@@ -272,7 +272,7 @@ class WheelSelector:
         if not compatible:
             return None
 
-        chosen = sorted(compatible)[0][2]
+        chosen = sorted(compatible, key=lambda x: (x[0], x[1]))[0][2]
         log.debug("best file: %s  (%d bytes)", chosen["filename"], chosen.get("size", 0))
         return chosen
 
@@ -494,40 +494,57 @@ class DependencyResolver:
 
         Rules
         ─────
-        Non-optional dep  (marker has no `extra` condition):
-          → include if the marker is satisfied by the base environment, else skip.
+        Non-optional dep (marker has no `extra` condition):
+          → include only if the marker is satisfied by the base environment.
 
-        Optional dep  (marker contains `extra == "..."`):
-          → WITHOUT --include-optional:
-               include only if one of the *explicitly requested* active_extras satisfies it.
-          → WITH --include-optional:
-               always include; use the extra name found in the marker as the label,
-               or fall back to the first active_extra that satisfies it.
+        Optional dep (marker contains `extra == "..."`):
+          The `active_extras` only represent the extras explicitly requested FOR THIS
+          PACKAGE (from its parent's requires_dist entry, e.g. `fastapi[standard]`).
+          They do NOT propagate to grandchildren.
+
+          → Check each active_extra. If the full marker (env + extra) is satisfied
+            → include, labelled with that extra name.
+          → If none of the active_extras satisfy it:
+              - WITHOUT --include-optional → skip.
+              - WITH    --include-optional → include anyway, labelled with the extra
+                name extracted from the marker, but ONLY if the non-extra part of
+                the marker (platform, python_version, etc.) is also satisfied.
         """
         if not req.marker:
             return None
 
-        # ── non-optional marker (no `extra` condition) ────────────────
-        if "extra" not in str(req.marker):
+        marker_str = str(req.marker)
+
+        # ── non-optional marker ───────────────────────────────────────
+        if "extra" not in marker_str:
             if req.marker.evaluate(self._ENV):
                 return None
             log.debug("skip  %s  (marker not satisfied: %s)", req.name, req.marker)
             return _SKIP
 
         # ── optional marker ───────────────────────────────────────────
-        # First check: is it satisfied by any of the *active* (explicitly requested) extras?
+        # Check against each explicitly-requested extra for this package.
         for extra in active_extras:
             if req.marker.evaluate({**self._ENV, "extra": extra}):
-                return extra   # always include when explicitly requested
+                return extra
 
-        # Not satisfied by active_extras.
+        # No active extra satisfies it.
         if not self._include_optional:
             log.debug("skip  %s  (optional; use --include-optional to include all)", req.name)
             return _SKIP
 
-        # --include-optional: include it and find which extra name gates it.
+        # --include-optional: include if the non-extra conditions are met.
         extra_label = self._extract_extra_name(req) or "optional"
-        log.debug("include  %s  (optional via extra=%s)", req.name, extra_label)
+        # Verify the rest of the marker (python_version, platform, etc.) is satisfied
+        # by evaluating with the extracted extra injected into the environment.
+        if not req.marker.evaluate({**self._ENV, "extra": extra_label}):
+            log.debug(
+                "skip  %s  (optional extra=%s but platform/version conditions not met)",
+                req.name, extra_label,
+            )
+            return _SKIP
+
+        log.debug("include  %s  (optional via --include-optional, extra=%s)", req.name, extra_label)
         return extra_label
 
     @staticmethod
