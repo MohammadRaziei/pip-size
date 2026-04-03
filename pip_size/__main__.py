@@ -6,22 +6,25 @@ Usage:
     pip-size "requests"
     pip-size "requests" --no-deps
     pip-size "requests==2.31.0"
+    pip-size "requests" --optional-deps
     pip-size "requests" --verbose
     pip-size "requests" --extra-verbose
     pip-size "requests" --no-cache
     pip-size --clear-cache
 """
 
+import asyncio
 import json
 import logging
 import os
 import shutil
 import sys
 import time
-import urllib.error
-import urllib.request
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import aiohttp
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -34,6 +37,7 @@ log = logging.getLogger("pip_size")
 
 PYPI_JSON_API     = "https://pypi.org/pypi/{package}/json"
 CACHE_TTL_SECONDS = 24 * 60 * 60
+MAX_CONCURRENCY   = 10   # max simultaneous PyPI requests
 
 # ordered dict of {tag_str: priority} for this interpreter/platform, mirroring pip's preference
 SUPPORTED_TAGS = {str(t): i for i, t in enumerate(sys_tags())}
@@ -56,8 +60,6 @@ def _cache_dir() -> Path:
 
 
 def _cache_path(url: str) -> Path:
-    # strip the common prefix and replace slashes to get a safe filename
-    # e.g. https://pypi.org/pypi/requests/json  ->  requests.json
     safe = url.replace("https://pypi.org/pypi/", "").removesuffix("/json").replace("/", "_")
     return _cache_dir() / f"{safe}.json"
 
@@ -100,57 +102,48 @@ def clear_cache() -> int:
     return count
 
 
-# ───────────────────────────── http ─────────────────────────────────
+# ───────────────────────────── async http ───────────────────────────
 
 
-def _fetch_json(url: str, use_cache: bool = True) -> dict:
+async def _fetch_json_async(
+    session: aiohttp.ClientSession,
+    url: str,
+    sem: asyncio.Semaphore,
+    use_cache: bool = True,
+) -> dict:
     if use_cache:
         cached = _cache_read(url)
         if cached is not None:
             return cached
 
     log.debug("GET %s", url)
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "pip-size/1.0", "Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req) as r:
-            data = json.loads(r.read().decode())
-            log.debug("response OK  (%s)", url)
-            if use_cache:
-                _cache_write(url, data)
-            return data
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"HTTP {e.code}: {e.reason}  ({url})") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"Network error: {e.reason}") from e
+    async with sem:
+        try:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"HTTP {resp.status}: {resp.reason}  ({url})")
+                data = await resp.json(content_type=None)
+                log.debug("response OK  (%s)", url)
+                if use_cache:
+                    _cache_write(url, data)
+                return data
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Network error: {e}") from e
 
 
 # ───────────────────────────── wheel selection ──────────────────────
 
 
 def _parse_wheel_tag(filename: str) -> tuple[str, str, str] | None:
-    """
-    Extract (python_tag, abi_tag, platform_tag) from a wheel filename.
-    Wheel format: {name}-{ver}(-{build})?-{python}-{abi}-{platform}.whl
-    """
     if not filename.endswith(".whl"):
         return None
     parts = filename[:-4].split("-")
     if len(parts) < 5:
         return None
-    # last three parts are always python-abi-platform
     return parts[-3], parts[-2], parts[-1]
 
 
 def _wheel_priority(filename: str) -> int:
-    """
-    Return the priority of a wheel for this platform (lower = better).
-    Each tag component can be dot-separated (e.g. cp311.cp310-abi3-linux_x86_64),
-    so we check all combinations against SUPPORTED_TAGS.
-    Returns sys.maxsize if no compatible tag is found.
-    """
     tags = _parse_wheel_tag(filename)
     if tags is None:
         return sys.maxsize
@@ -169,15 +162,9 @@ def _wheel_priority(filename: str) -> int:
 
 
 def _best_file(files: list[dict]) -> dict | None:
-    """
-    Pick the best compatible distribution file for this platform.
-    Wheels are preferred over sdist; among wheels the one with the lowest
-    priority index (i.e. closest match in sys_tags) wins.
-    """
     env = default_environment()
     compatible = []
     for f in files:
-        # skip files that require a python version we don't have
         requires_python = f.get("requires_python")
         if requires_python:
             if not SpecifierSet(requires_python).contains(env["python_version"]):
@@ -187,9 +174,9 @@ def _best_file(files: list[dict]) -> dict | None:
         if f["filename"].endswith(".whl"):
             priority = _wheel_priority(f["filename"])
             if priority < sys.maxsize:
-                compatible.append((0, priority, f))  # 0 = wheel (preferred over sdist)
+                compatible.append((0, priority, f))
         else:
-            compatible.append((1, 0, f))             # 1 = sdist (last resort)
+            compatible.append((1, 0, f))
 
     if not compatible:
         return None
@@ -200,21 +187,20 @@ def _best_file(files: list[dict]) -> dict | None:
     return chosen
 
 
-# ───────────────────────────── pypi api ─────────────────────────────
+# ───────────────────────────── data model ───────────────────────────
 
 
 @dataclass
 class PackageInfo:
     name:         str
     version:      str
-    size:         int                # bytes of the chosen distribution file
-    filename:     str                # e.g. requests-2.31.0-py3-none-any.whl
-    via_extra:    str | None = None  # set when this dep was pulled in by an extra marker
+    size:         int
+    filename:     str
+    via_extra:    str | None = None
     dependencies: list["PackageInfo"] = field(default_factory=list)
 
 
 def _resolve_version(releases: dict, specifier_str: str) -> str | None:
-    """Pick the latest stable version that satisfies specifier_str."""
     spec     = SpecifierSet(specifier_str, prereleases=False)
     versions = sorted(
         (Version(v) for v in releases if not Version(v).is_prerelease),
@@ -226,129 +212,197 @@ def _resolve_version(releases: dict, specifier_str: str) -> str | None:
     return None
 
 
-def fetch_package(name: str, use_cache: bool = True) -> tuple[dict, str]:
-    """
-    Fetch the PyPI JSON for a package (always the /pypi/{name}/json endpoint).
-    Returns (full_data, latest_version). Exactly one HTTP request per package.
-    Version resolution for older releases is done from data["releases"] — no second request.
-    """
-    data = _fetch_json(PYPI_JSON_API.format(package=name), use_cache)
-    return data, data["info"]["version"]
+# ───────────────────────────── BFS resolver ─────────────────────────
 
 
-def get_package_info(
-    name:      str,
-    version:   str | None    = None,
-    spec:      str           = "",
-    extras:    set[str] | None = None,
-    seen:      set | None    = None,
-    solo:      bool          = False,
-    use_cache: bool          = True,
-    quiet:     bool          = False,
-    depth:     int           = 0,
+@dataclass
+class _QueueItem:
+    """One unit of work in the BFS queue."""
+    name:      str
+    spec:      str
+    extras:    set[str] | None
+    via_extra: str | None
+    parent:    PackageInfo | None   # None for the root
+    depth:     int
+
+
+async def _resolve_bfs(
+    root_req:        Requirement,
+    no_deps:         bool,
+    include_optional: bool,
+    use_cache:       bool,
+    quiet:           bool,
 ) -> PackageInfo | None:
     """
-    Recursively fetch and resolve a package and all its dependencies.
+    BFS over the dependency graph.
 
-    - version : if provided, pins to an exact version (skips specifier logic)
-    - spec    : PEP 440 specifier string, e.g. ">=2.0,<3"
-    - extras  : active extras from the parent requirement, e.g. {"security"}
-    - seen    : set of already-resolved package names (guards against cycles)
-    - solo    : if True, skip dependency resolution
+    Layers are processed level-by-level; within each layer all PyPI fetches
+    run concurrently (bounded by MAX_CONCURRENCY).
+
+    Optional dependencies (those only reachable via an `extra` marker and
+    not explicitly requested) are skipped unless --optional-deps is set.
     """
-    if seen is None:
-        seen = set()
+    env = default_environment()
+    sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    indent = "  " * depth
-    log.info("%sresolving  %s%s", indent, name, f"  (spec: {spec})" if spec else "")
+    connector = aiohttp.TCPConnector(limit=MAX_CONCURRENCY)
+    headers   = {"User-Agent": "pip-size/1.0", "Accept": "application/json"}
 
-    try:
-        data, latest_version = fetch_package(name, use_cache)
-    except RuntimeError as e:
-        log.warning("%s✗ %s  (%s)", indent, name, e)
-        print(f"{indent}  ✗ {name}  (error: {e})")
-        return None
+    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
 
-    # pick the right version — all info lives in data["releases"], no second fetch needed
-    releases = data.get("releases", {})
-    if version:
-        resolved_version = version
-    elif spec:
-        specifier = SpecifierSet(spec)
-        if specifier.contains(latest_version):
-            resolved_version = latest_version
-        else:
-            resolved_version = _resolve_version(releases, spec)
-            if resolved_version is None:
-                log.warning("%s✗ %s  (no version matching %s)", indent, name, spec)
+        seen:        set[str]                       = set()
+        # pkg_node[name] = PackageInfo once resolved
+        pkg_node:    dict[str, PackageInfo]         = {}
+
+        # ── helpers ──────────────────────────────────────────────────
+
+        async def fetch_and_resolve(item: _QueueItem) -> list[_QueueItem]:
+            """
+            Fetch package data, build a PackageInfo, attach it to its parent,
+            and return the next-level queue items (its own deps).
+            """
+            key = item.name.lower()
+            if key in seen:
+                log.debug("skip  %s  (already resolved)", item.name)
+                return []
+            seen.add(key)
+
+            indent = "  " * item.depth
+            url    = PYPI_JSON_API.format(package=item.name)
+
+            try:
+                data = await _fetch_json_async(session, url, sem, use_cache)
+            except RuntimeError as e:
+                log.warning("%s✗ %s  (%s)", indent, item.name, e)
                 if not quiet:
-                    print(f"{indent}  ✗ {name}  (no version matching {spec})")
-                return None
-            log.debug("latest %s does not satisfy %s, resolved to %s", latest_version, spec, resolved_version)
-    else:
-        resolved_version = latest_version
+                    print(f"{indent}  ✗ {item.name}  (error: {e})")
+                return []
 
-    # deduplicate: skip if we already resolved this package in this run
-    key = name.lower()
-    if key in seen:
-        log.debug("skip  %s==%s  (already resolved)", name, resolved_version)
-        return None
-    seen.add(key)
+            releases       = data.get("releases", {})
+            latest_version = data["info"]["version"]
 
-    files     = releases.get(resolved_version, [])
-    best_file = _best_file(files)
-    size      = best_file["size"]     if best_file else 0
-    filename  = best_file["filename"] if best_file else "N/A"
-
-    log.info("%s✓ %s==%s  →  %s  (%s)", indent, name, resolved_version, filename, _format_size(size))
-    if not quiet:
-        print(f"{indent}  ✓ {name}=={resolved_version}  →  {filename}")
-
-    pkg = PackageInfo(name=name, version=resolved_version, size=size, filename=filename)
-
-    if solo:
-        return pkg
-
-    env           = default_environment()
-    active_extras = extras or set()
-    requires_dist = data["info"].get("requires_dist") or []
-    log.debug("%s%d dependencies declared", indent, len(requires_dist))
-
-    for req_str in requires_dist:
-        try:
-            req = Requirement(req_str)
-        except Exception as e:
-            log.debug("could not parse requirement %r: %s", req_str, e)
-            continue
-
-        # evaluate the marker against each active extra; include the dep if any matches
-        triggered_by: str | None = None
-        if req.marker:
-            for extra in (active_extras or {None}):
-                marker_env = {**env, "extra": extra} if extra else env
-                if req.marker.evaluate(marker_env):
-                    triggered_by = extra  # remember which extra unlocked this dep
-                    break
+            # pick version
+            if item.spec:
+                specifier = SpecifierSet(item.spec)
+                if specifier.contains(latest_version):
+                    resolved = latest_version
+                else:
+                    resolved = _resolve_version(releases, item.spec)
+                    if resolved is None:
+                        log.warning("%s✗ %s  (no version matching %s)", indent, item.name, item.spec)
+                        if not quiet:
+                            print(f"{indent}  ✗ {item.name}  (no version matching {item.spec})")
+                        return []
             else:
-                log.debug("skip  %s  (marker not satisfied for extras=%s: %s)", req.name, active_extras, req.marker)
-                continue
+                resolved = latest_version
 
-        dep = get_package_info(
-            name      = req.name,
-            version   = None,
-            spec      = str(req.specifier),
-            extras    = set(req.extras) if req.extras else None,
-            seen      = seen,
-            solo      = False,
-            use_cache = use_cache,
-            quiet     = quiet,
-            depth     = depth + 1,
+            files     = releases.get(resolved, [])
+            best_file = _best_file(files)
+            size      = best_file["size"]     if best_file else 0
+            filename  = best_file["filename"] if best_file else "N/A"
+
+            log.info("%s✓ %s==%s  →  %s  (%s)", indent, item.name, resolved, filename, _format_size(size))
+            if not quiet:
+                print(f"{indent}  ✓ {item.name}=={resolved}  →  {filename}")
+
+            pkg            = PackageInfo(name=item.name, version=resolved, size=size, filename=filename, via_extra=item.via_extra)
+            pkg_node[key]  = pkg
+
+            # attach to parent
+            if item.parent is not None:
+                item.parent.dependencies.append(pkg)
+
+            if no_deps:
+                return []
+
+            # ── enumerate next-level deps ─────────────────────────────
+            active_extras = item.extras or set()
+            requires_dist = data["info"].get("requires_dist") or []
+            next_items:   list[_QueueItem] = []
+
+            for req_str in requires_dist:
+                try:
+                    req = Requirement(req_str)
+                except Exception as e:
+                    log.debug("could not parse requirement %r: %s", req_str, e)
+                    continue
+
+                triggered_by: str | None = None
+
+                if req.marker:
+                    # Check whether this dep is *only* reachable via an extra
+                    # (i.e. the marker contains `extra == "..."`)
+                    marker_str          = str(req.marker)
+                    is_optional_only    = 'extra' in marker_str
+
+                    if is_optional_only and not include_optional:
+                        # only evaluate against explicitly requested extras
+                        for extra in (active_extras or set()):
+                            marker_env = {**env, "extra": extra}
+                            if req.marker.evaluate(marker_env):
+                                triggered_by = extra
+                                break
+                        if triggered_by is None:
+                            log.debug(
+                                "skip  %s  (optional dep, use --optional-deps to include: %s)",
+                                req.name, req.marker,
+                            )
+                            continue
+                    else:
+                        # evaluate normally (no-extra env first, then per-extra)
+                        if req.marker.evaluate(env):
+                            triggered_by = None   # non-extra marker, satisfied
+                        else:
+                            for extra in (active_extras or set()):
+                                marker_env = {**env, "extra": extra}
+                                if req.marker.evaluate(marker_env):
+                                    triggered_by = extra
+                                    break
+                            else:
+                                log.debug(
+                                    "skip  %s  (marker not satisfied for extras=%s: %s)",
+                                    req.name, active_extras, req.marker,
+                                )
+                                continue
+
+                next_items.append(_QueueItem(
+                    name      = req.name,
+                    spec      = str(req.specifier),
+                    extras    = set(req.extras) if req.extras else None,
+                    via_extra = triggered_by,
+                    parent    = pkg,
+                    depth     = item.depth + 1,
+                ))
+
+            return next_items
+
+        # ── BFS loop ─────────────────────────────────────────────────
+
+        root_item = _QueueItem(
+            name      = root_req.name,
+            spec      = str(root_req.specifier),
+            extras    = set(root_req.extras) if root_req.extras else None,
+            via_extra = None,
+            parent    = None,
+            depth     = 0,
         )
-        if dep:
-            dep.via_extra = triggered_by
-            pkg.dependencies.append(dep)
 
-    return pkg
+        current_layer: list[_QueueItem] = [root_item]
+
+        while current_layer:
+            # run all items in this layer concurrently
+            results = await asyncio.gather(
+                *[fetch_and_resolve(item) for item in current_layer],
+                return_exceptions=False,
+            )
+            # flatten next-layer items
+            next_layer: list[_QueueItem] = []
+            for next_items in results:
+                next_layer.extend(next_items)
+            current_layer = next_layer
+
+        root_key = root_req.name.lower()
+        return pkg_node.get(root_key)
 
 
 # ───────────────────────────── display ──────────────────────────────
@@ -366,17 +420,14 @@ def _total_size(pkg: PackageInfo) -> int:
     return pkg.size + sum(_total_size(d) for d in pkg.dependencies)
 
 
-
 def _to_dict(pkg: PackageInfo, as_bytes: bool = False) -> dict:
-    """Serialize a PackageInfo tree to a plain dict suitable for JSON output."""
-    size = pkg.size if as_bytes else _format_size(pkg.size)
-    total = _total_size(pkg)
+    total  = _total_size(pkg)
     result = {
-        "name":         pkg.name,
-        "version":      pkg.version,
-        "size":         pkg.size if as_bytes else _format_size(pkg.size),
-        "total_size":   total if as_bytes else _format_size(total),
-        "filename":     pkg.filename,
+        "name":       pkg.name,
+        "version":    pkg.version,
+        "size":       pkg.size if as_bytes else _format_size(pkg.size),
+        "total_size": total    if as_bytes else _format_size(total),
+        "filename":   pkg.filename,
     }
     if pkg.via_extra:
         result["via_extra"] = pkg.via_extra
@@ -384,7 +435,14 @@ def _to_dict(pkg: PackageInfo, as_bytes: bool = False) -> dict:
         result["dependencies"] = [_to_dict(d, as_bytes) for d in pkg.dependencies]
     return result
 
-def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_root: bool = False, fmt=_format_size) -> None:
+
+def _print_tree(
+    pkg:     PackageInfo,
+    prefix:  str  = "",
+    is_last: bool = True,
+    is_root: bool = False,
+    fmt           = _format_size,
+) -> None:
     if is_root:
         total = _total_size(pkg)
         print(f"\n  {pkg.name}=={pkg.version}  ({fmt(total)} total)")
@@ -392,7 +450,7 @@ def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_roo
     else:
         connector    = "└── " if is_last else "├── "
         child_prefix = prefix + ("    " if is_last else "│   ")
-        extra_tag = f"  [extra: {pkg.via_extra}]" if pkg.via_extra else ""
+        extra_tag    = f"  [extra: {pkg.via_extra}]" if pkg.via_extra else ""
         print(f"{prefix}{connector}{pkg.name}=={pkg.version}  {fmt(pkg.size)}{extra_tag}")
 
     for i, dep in enumerate(pkg.dependencies):
@@ -404,29 +462,38 @@ def _print_tree(pkg: PackageInfo, prefix: str = "", is_last: bool = True, is_roo
         )
 
 
-# ───────────────────────────── main ─────────────────────────────────
+# ───────────────────────────── entry point ──────────────────────────
 
 
-def pip_size(package_spec: str, no_deps: bool = False, use_cache: bool = True, quiet: bool = False, as_bytes: bool = False, as_json: bool = False) -> None:
+async def pip_size_async(
+    package_spec:     str,
+    no_deps:          bool = False,
+    include_optional: bool = False,
+    use_cache:        bool = True,
+    quiet:            bool = False,
+    as_bytes:         bool = False,
+    as_json:          bool = False,
+) -> None:
     req  = Requirement(package_spec)
-    name = req.name
-    spec = str(req.specifier)
 
-    log.info("starting  package=%s  spec=%s  no_deps=%s  cache=%s", name, spec or "latest", no_deps, use_cache)
+    log.info(
+        "starting  package=%s  spec=%s  no_deps=%s  optional=%s  cache=%s",
+        req.name, str(req.specifier) or "latest", no_deps, include_optional, use_cache,
+    )
     log.debug("cache dir: %s", _cache_dir())
     log.debug("platform tags (top 5): %s", list(SUPPORTED_TAGS.keys())[:5])
 
     if not quiet:
-        cache_note = "  (cache disabled)" if not use_cache else ""
-        print(f"\n🔍 Resolving '{package_spec}'...{cache_note}")
+        cache_note    = "  (cache disabled)" if not use_cache else ""
+        optional_note = "  (including optional deps)" if include_optional else ""
+        print(f"\n🔍 Resolving '{package_spec}'...{cache_note}{optional_note}")
 
-    pkg = get_package_info(
-        name      = name,
-        spec      = spec,
-        extras    = set(req.extras) if req.extras else None,
-        solo      = no_deps,
-        use_cache = use_cache,
-        quiet     = quiet,
+    pkg = await _resolve_bfs(
+        root_req         = req,
+        no_deps          = no_deps,
+        include_optional = include_optional,
+        use_cache        = use_cache,
+        quiet            = quiet,
     )
 
     if pkg is None:
@@ -447,9 +514,30 @@ def pip_size(package_spec: str, no_deps: bool = False, use_cache: bool = True, q
         print()
 
 
+def pip_size(
+    package_spec:     str,
+    no_deps:          bool = False,
+    include_optional: bool = False,
+    use_cache:        bool = True,
+    quiet:            bool = False,
+    as_bytes:         bool = False,
+    as_json:          bool = False,
+) -> None:
+    asyncio.run(pip_size_async(
+        package_spec     = package_spec,
+        no_deps          = no_deps,
+        include_optional = include_optional,
+        use_cache        = use_cache,
+        quiet            = quiet,
+        as_bytes         = as_bytes,
+        as_json          = as_json,
+    ))
+
+
 # ────────────────────────────────────────────────────────────────────
 
-def main():
+
+def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -464,6 +552,14 @@ def main():
         "--no-deps",
         action="store_true",
         help="Show size of the package itself only, without resolving dependencies.",
+    )
+    parser.add_argument(
+        "--optional-deps",
+        action="store_true",
+        help=(
+            "Include optional dependencies (those gated behind an `extra` marker). "
+            "By default these are skipped unless you requested that extra explicitly."
+        ),
     )
     parser.add_argument(
         "--quiet",
@@ -500,7 +596,7 @@ def main():
     verbosity.add_argument(
         "--extra-verbose",
         action="store_true",
-        help="Enable DEBUG logging (HTTP requests, wheel scoring, marker evaluation, cache).",
+        help="Enable DEBUG logging (HTTP, wheel scoring, marker evaluation, cache).",
     )
 
     args = parser.parse_args()
@@ -527,7 +623,15 @@ def main():
         parser.error("the following arguments are required: package")
 
     try:
-        pip_size(args.package, no_deps=args.no_deps, use_cache=not args.no_cache, quiet=args.quiet, as_bytes=args.bytes, as_json=args.json)
+        pip_size(
+            args.package,
+            no_deps          = args.no_deps,
+            include_optional = args.optional_deps,
+            use_cache        = not args.no_cache,
+            quiet            = args.quiet,
+            as_bytes         = args.bytes,
+            as_json          = args.json,
+        )
     except RuntimeError as e:
         log.error("%s", e)
         print(f"\n❌ Error: {e}")
