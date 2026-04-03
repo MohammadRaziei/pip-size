@@ -6,7 +6,7 @@ Usage:
     pip-size "requests"
     pip-size "requests" --no-deps
     pip-size "requests==2.31.0"
-    pip-size "requests" --include-optional
+    pip-size "requests" --optional-deps
     pip-size "requests" --verbose
     pip-size "requests" --extra-verbose
     pip-size "requests" --no-cache
@@ -221,12 +221,17 @@ class PackageInfo:
 
 
 def _resolve_version(releases: dict, specifier_str: str) -> str | None:
-    spec     = SpecifierSet(specifier_str, prereleases=False)
-    versions = sorted(
-        (Version(v) for v in releases if not Version(v).is_prerelease),
-        reverse=True,
-    )
-    for v in versions:
+    spec = SpecifierSet(specifier_str, prereleases=False)
+    candidates: list[Version] = []
+    for v in releases:
+        try:
+            parsed = Version(v)
+        except Exception:
+            log.debug("skipping unparseable release version %r", v)
+            continue
+        if not parsed.is_prerelease:
+            candidates.append(parsed)
+    for v in sorted(candidates, reverse=True):
         if v in spec:
             return str(v)
     return None
@@ -358,7 +363,13 @@ async def _resolve_bfs(
             # pick version
             if item.spec:
                 specifier = SpecifierSet(item.spec)
-                if specifier.contains(latest_version):
+                try:
+                    latest_satisfies = specifier.contains(latest_version)
+                except Exception:
+                    log.debug("latest version %r is unparseable, falling back to release scan", latest_version)
+                    latest_satisfies = False
+
+                if latest_satisfies:
                     resolved = latest_version
                 else:
                     resolved = _resolve_version(releases, item.spec)
@@ -418,7 +429,7 @@ async def _resolve_bfs(
                                 break
                         if triggered_by is None:
                             log.debug(
-                                "skip  %s  (optional dep, use --include-optional to include: %s)",
+                                "skip  %s  (optional dep, use --optional-deps to include: %s)",
                                 req.name, req.marker,
                             )
                             continue
