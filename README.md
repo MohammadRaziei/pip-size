@@ -30,13 +30,6 @@ Use it to:
 pip install pip-size
 ```
 
-**Dependencies:**
-
-```bash
-pip install aiohttp packaging          # required
-pip install aiohttp-socks              # optional — only needed for SOCKS proxy support
-```
-
 ---
 
 ## Quick Start
