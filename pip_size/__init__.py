@@ -1,3 +1,3 @@
 from .__about__ import __version__
 
-from .core import PipSize, Printer, DependencyResolver, Cache
+from .core import PipSize, Printer, DependencyResolver, Cache, PackageInfo, WheelSelector
