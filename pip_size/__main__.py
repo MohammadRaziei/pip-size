@@ -29,7 +29,8 @@ import sys
 import logging
 import argparse
 
-from . import PipSize, Cache
+from . import Cache, PipSize
+from .__about__ import __version__
 
 log = logging.getLogger("pip_size")
 
@@ -47,6 +48,7 @@ def main() -> None:
         help='a requirement ("requests", "requests==2.31.0", "requests[security]") '
              'or the path to a local .whl file (optionally "x.whl[extra]")',
     )
+    parser.add_argument("--version", action="version", version=f"pip-size {__version__}")
     parser.add_argument(
         "--no-deps",
         action="store_true",

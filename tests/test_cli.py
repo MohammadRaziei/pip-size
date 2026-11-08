@@ -98,3 +98,10 @@ def test_all_extras_flags(monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == "1260"
     ok_cli(monkeypatch, "root", "--all-extras-deep", "--quiet", "--bytes")
     assert capsys.readouterr().out.strip() == "1267"
+
+
+def test_version_flag(monkeypatch, capsys):
+    from pip_size import __version__
+
+    assert run_cli(monkeypatch, "--version") == 0
+    assert capsys.readouterr().out.strip() == f"pip-size {__version__}"

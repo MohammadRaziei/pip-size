@@ -64,6 +64,6 @@ version matrix.
 
 ## Releasing
 
-1. Bump the version in `pip_size/__about__.py`.
+1. Bump the version in `pip_size/__about__.py` and add an entry to `CHANGELOG.md`.
 2. Push a tag named `vX.Y.Z`. The workflow in `.github/workflows/wheel.yml` runs the tests, builds
    the distributions, creates the GitHub release and uploads to PyPI.
