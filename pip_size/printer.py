@@ -69,7 +69,9 @@ class Printer:
             tags.append(f"[extra: {pkg.via_extra}]")
         if pkg.skipped:
             tags.append(f"[skipped: {pkg.skipped}]")
-        if pkg.local:
+        if pkg.built_from:
+            tags.append("[built from source]")
+        elif pkg.local:
             tags.append("[local wheel]")
         return ("  " + "  ".join(tags)) if tags else ""
 
@@ -97,6 +99,8 @@ class Printer:
             result["skipped"] = pkg.skipped
         if pkg.local:
             result["local"] = True
+        if pkg.built_from:
+            result["built_from"] = pkg.built_from
         if pkg.dependencies:
             result["dependencies"] = [self._to_dict(d) for d in pkg.dependencies]
         return result

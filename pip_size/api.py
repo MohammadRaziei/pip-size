@@ -29,12 +29,13 @@ from typing import Callable, Iterable
 
 from packaging.requirements import InvalidRequirement, Requirement
 
+from .build import build_wheel, parse_source_spec
 from .cache import Cache
 from .client import PyPIClient, resolve_proxy_url
+from .errors import PipSizeError, ResolutionError
 from .models import Resolution
 from .printer import Printer
 from .resolver import DependencyResolver
-from .errors import PipSizeError, ResolutionError
 from .skip import SkipRules
 from .wheel import parse_wheel_spec, read_wheel
 
@@ -69,7 +70,9 @@ async def resolve_async(
     Resolve *spec* and return a Resolution. Nothing is printed unless *progress* is given.
 
     spec            a requirement ("requests", "requests==2.31.0", "requests[security]"),
-                    a Requirement, or the path to a local .whl (optionally "x.whl[extra]")
+                    a Requirement, the path to a local .whl (optionally "x.whl[extra]"), or a
+                    source to build a wheel from first: a project directory, an sdist archive,
+                    or a VCS URL ("git+https://...", "name @ git+https://...")
     no_deps         only the package itself
     all_extras      activate every extra declared by the ROOT package
     all_extras_deep also activate every extra of every dependency (unbounded: can resolve thousands of packages)
@@ -99,10 +102,15 @@ async def resolve_async(
             path, wheel_extras = parsed
             wheel = read_wheel(path)                # raises WheelError (a PipSizeError)
         else:
-            try:
-                req = Requirement(text)
-            except InvalidRequirement as exc:
-                raise ResolutionError(f"Invalid requirement {text!r}: {exc}") from exc
+            source = parse_source_spec(text)               # raises BuildError for a bad path
+            if source is not None:
+                wheel = await build_wheel(source, progress=progress)
+                wheel_extras = source.extras
+            else:
+                try:
+                    req = Requirement(text)
+                except InvalidRequirement as exc:
+                    raise ResolutionError(f"Invalid requirement {text!r}: {exc}") from exc
 
     async with PyPIClient(proxy=proxy, use_cache=use_cache) as client:
         resolver = DependencyResolver(

@@ -9,7 +9,8 @@ pip-size ./dist/mypkg-*.whl --skip-installed             # the glob must match e
 ```
 
 It answers the question *"how much will users download when they install this?"* before the
-package is on PyPI.
+package is on PyPI. Have a directory or a git URL instead of a wheel? See
+[Directories, git URLs and archives](source-builds.md).
 
 ## What is read from the wheel
 
@@ -49,7 +50,7 @@ A problem with the file stops the run with exit status `1` and a message on stde
 
 ## Limits
 
-- Only wheels (`.whl`) are supported. A source distribution does not carry reliable dependency metadata, since it is usually produced by running a build.
+- Only wheels (`.whl`) are read directly. To size a project directory, a git URL or an sdist, `pip-size` builds a wheel first: see [Directories, git URLs and archives](source-builds.md).
 - The dependencies listed in the wheel are looked up on PyPI by name. A dependency that exists only on a private index cannot be resolved and is reported as a warning.
 
 ## From Python

@@ -47,7 +47,7 @@ release costs your users before anyone installs it.
 - **Nothing is downloaded.** Versions, file names and sizes come from the PyPI Simple API. Results are cached for 24 hours.
 - **Picks files the way pip does.** Wheel tags of the running interpreter, `requires-python`, environment markers and extras are honoured; yanked files are ignored.
 - **A Python library, not just a CLI.** `import pip_size` and call `pip_size.resolve()` (or `await pip_size.resolve_async()`): you get a typed result object and nothing is printed.
-- **Works on a wheel you just built.** Point it at a `.whl`: its size and `METADATA` are read from disk.
+- **Works on what you are about to ship.** Point it at a `.whl` (size and `METADATA` are read from the file), or at a project directory or `git+https://` URL, which is built into a wheel first.
 - **Skip what is already there.** Keep numpy, torch or anything installed in the tree with its size, but leave it out of the total.
 - **Made for scripts and CI.** `--quiet --bytes` prints one number, `--json` prints only JSON, and an unresolvable package exits with status 1.
 
@@ -142,7 +142,18 @@ pip-size "./dist/mypkg-1.0-py3-none-any.whl[server]"     # activate an extra
 The size is the file's size on disk, the dependency list is read from the wheel's `METADATA`, and
 everything below it is resolved from PyPI as usual: *how much will users download when they
 install this?*, before it is on PyPI.
-[More on local wheels](https://mohammadraziei.github.io/pip-size/guide/local-wheels/)
+
+A project directory, a git URL or an sdist works too: `pip-size` builds a wheel from it first.
+
+```bash
+pip-size ./my-project
+pip-size "git+https://github.com/owner/repo"
+```
+
+Building runs the project's build backend, like `pip wheel`, from a temporary copy; only build
+sources you trust.
+[More on local wheels](https://mohammadraziei.github.io/pip-size/guide/local-wheels/) ·
+[directories and git URLs](https://mohammadraziei.github.io/pip-size/guide/source-builds/)
 
 ## Documentation
 

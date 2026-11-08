@@ -76,11 +76,11 @@ virtual environment or a single wheel download.
 
     [:octicons-arrow-right-24: Skipping dependencies](guide/skipping.md)
 
--   :material-package-variant-closed:{ .lg .middle } **Check a wheel you just built**
+-   :material-package-variant-closed:{ .lg .middle } **Check what you are about to ship**
 
     ---
 
-    Point it at a `.whl`: its size and metadata are read from the file.
+    Point it at a `.whl`, a project directory or a git URL: wheels are read from the file, sources are built first.
 
     [:octicons-arrow-right-24: Local wheels](guide/local-wheels.md)
 

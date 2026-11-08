@@ -19,9 +19,9 @@ to keep in mind when you rely on a number.
 ## Inputs that are not supported
 
 - **Only `pypi.org`.** There is no private index, `--index-url` or authentication.
-- **Direct URL and VCS requirements** (`pkg @ https://...`, `git+https://...`) found among dependencies are looked up by name on PyPI.
+- **Direct URL and VCS requirements among the dependencies** (`pkg @ https://...`) are looked up by name on PyPI. Only the package you ask about can be built from a URL.
 - **Constraints files, `--pre` and platform overrides** (`--platform`, `--python-version`) do not exist.
-- **Local source distributions and directories.** Only a [local wheel](../guide/local-wheels.md) can be a root.
+- **Building needs a builder.** A directory, git URL or archive is built with pip (or, for directories and archives, `uv`). See [Directories, git URLs and archives](../guide/source-builds.md).
 
 ## Operations
 

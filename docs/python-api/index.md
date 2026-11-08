@@ -54,7 +54,7 @@ asyncio.run(compare(["requests", "httpx", "aiohttp"]))
 | `Resolution`, `PackageInfo`, `Conflict`, `Printer`, `PipSize` | [Result objects](results.md) |
 | `SkipRules` | [Skip rules](skip-rules.md) |
 | `read_wheel`, `LocalWheel` | [Wheels](wheels.md) |
-| `PipSizeError`, `ResolutionError`, `WheelError`, `SkipSourceError` | [Errors and logging](errors.md) |
+| `PipSizeError`, `ResolutionError`, `WheelError`, `BuildError`, `SkipSourceError` | [Errors and logging](errors.md) |
 | `Cache`, `DependencyResolver` | Lower-level building blocks, see [How it works](../concepts/how-it-works.md). |
 
 !!! note "Stability"

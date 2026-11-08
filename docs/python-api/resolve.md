@@ -18,6 +18,7 @@ Nothing is printed unless you pass `progress`.
 | A requirement string | `"requests"`, `"requests==2.31.0"`, `"requests[socks]"`, `"httpx>=0.27,<1"` |
 | A `packaging.requirements.Requirement` | `Requirement("requests[socks]")` |
 | A path to a local wheel (`str` or `os.PathLike`), optionally with extras | `"./dist/mypkg-1.0-py3-none-any.whl"`, `"./dist/mypkg-1.0-py3-none-any.whl[server]"` |
+| A source to build a wheel from first: a project directory, an sdist archive, a VCS URL or a direct reference | `"./my-project"`, `"git+https://github.com/owner/repo"`, `"mypkg[x] @ git+https://..."`. See [Directories, git URLs and archives](../guide/source-builds.md). |
 
 ## Options
 

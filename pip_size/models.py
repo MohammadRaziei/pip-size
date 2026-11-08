@@ -19,6 +19,7 @@ class PackageInfo:
     via_extra:    str | None = None
     skipped:      str | None = None   # reason, if excluded from the total
     local:        bool       = False  # True for a wheel read from disk
+    built_from:   str | None = None   # the source it was built from, if it was built
     dependencies: list[PackageInfo] = field(default_factory=list)
 
     def total_size(self, include_skipped: bool = False) -> int:
@@ -52,6 +53,8 @@ class PackageInfo:
             out["skipped"] = self.skipped
         if self.local:
             out["local"] = True
+        if self.built_from:
+            out["built_from"] = self.built_from
         if self.dependencies:
             out["dependencies"] = [d.to_dict() for d in self.dependencies]
         return out

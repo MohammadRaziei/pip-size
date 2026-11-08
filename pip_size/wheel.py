@@ -26,6 +26,7 @@ class LocalWheel:
     requires_dist:   list[str]                 = field(default_factory=list)
     requires_python: str | None                = None
     provides_extra:  list[str]                 = field(default_factory=list)
+    built_from:      str | None                = None   # set when the wheel was built from source
 
     @property
     def filename(self) -> str:

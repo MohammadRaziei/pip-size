@@ -148,10 +148,11 @@ class DependencyResolver:
             wheel = item.local
             pkg = PackageInfo(
                 name=wheel.name, version=wheel.version, size=wheel.size,
-                filename=wheel.filename, local=True,
+                filename=wheel.filename, local=True, built_from=wheel.built_from,
             )
             requires: list[str] = wheel.requires_dist
-            self._say(f"{indent}  ✓ {pkg.name}=={pkg.version}  →  {pkg.filename}  (local file)")
+            origin = "built from source" if wheel.built_from else "local file"
+            self._say(f"{indent}  ✓ {pkg.name}=={pkg.version}  →  {pkg.filename}  ({origin})")
         else:
             try:
                 version, best_file, release = await self._select(item)

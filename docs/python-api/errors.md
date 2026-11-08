@@ -16,6 +16,7 @@ except pip_size.PipSizeError as exc:
 | `PipSizeError` | Base class of everything below. It derives from `RuntimeError`. |
 | `ResolutionError` | The root package cannot be resolved: unknown name, no matching version, an invalid requirement string, or a network failure on the root. |
 | `WheelError` | A local wheel is missing, unreadable, or has no `METADATA`. |
+| `BuildError` | A wheel could not be built from a directory, VCS URL or archive: the path does not exist, the directory is not a project, no builder is available, or the build failed (the message ends with the last lines of its output). |
 | `SkipSourceError` | A skip source cannot be read: a missing freeze file, or an interpreter that cannot be run. |
 
 A failure on a **dependency** is not an exception. The rest of the tree is still returned and the

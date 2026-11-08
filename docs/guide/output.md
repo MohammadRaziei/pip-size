@@ -21,7 +21,7 @@ into another program. Errors always go to stderr.
 ```
 
 Dependencies are sorted by name. A package that several packages depend on appears once, under
-the first. Tags after a size: `[extra: ...]`, `[skipped: ...]`, `[local wheel]`.
+the first. Tags after a size: `[extra: ...]`, `[skipped: ...]`, `[local wheel]`, `[built from source]`.
 
 When something was skipped, a summary follows the tree:
 
@@ -86,7 +86,8 @@ pip-size idna --json
 | `dependencies` | array | Child nodes. Absent for leaves. |
 | `via_extra` | string | The extra that pulled the package in. Only if applicable. |
 | `skipped` | string | The reason it is skipped. Only if applicable. |
-| `local` | boolean | `true` for a local wheel. Only if applicable. |
+| `local` | boolean | `true` for a local wheel or one built from source. Only if applicable. |
+| `built_from` | string | The directory, URL or archive the wheel was built from. Only if applicable. |
 
 ### Extra fields on the root node
 

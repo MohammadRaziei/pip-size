@@ -15,5 +15,9 @@ class WheelError(PipSizeError):
     """A local .whl file is missing, unreadable, or has no usable metadata."""
 
 
+class BuildError(PipSizeError):
+    """A wheel could not be built from a directory, VCS URL or archive."""
+
+
 class SkipSourceError(PipSizeError):
     """A skip source (freeze file, interpreter) could not be read."""

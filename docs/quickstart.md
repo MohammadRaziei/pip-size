@@ -35,6 +35,7 @@ and platform, as pip would pick it. Nothing is downloaded; names and sizes come 
 | `[extra: socks]` | The package is there because of an [extra](guide/extras.md). |
 | `[skipped: ...]` | The package is shown but not counted, see [Skipping dependencies](guide/skipping.md). |
 | `[local wheel]` | The root is a `.whl` read from disk, see [Local wheels](guide/local-wheels.md). |
+| `[built from source]` | The root is a wheel built from a directory, git URL or archive, see [Directories, git URLs and archives](guide/source-builds.md). |
 
 ## Common tasks
 
@@ -46,8 +47,10 @@ pip-size requests --no-deps
 pip-size "requests==2.31.0"
 pip-size "requests[socks]"
 
-# A wheel you just built
+# A wheel you just built, or a project directory or git URL (built into a wheel first)
 pip-size ./dist/mypkg-1.0-py3-none-any.whl
+pip-size ./my-project
+pip-size "git+https://github.com/owner/repo"
 
 # Do not count what the target machine already has
 pip-size fastapi --skip-installed

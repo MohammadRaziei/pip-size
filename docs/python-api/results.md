@@ -21,7 +21,7 @@ pip_size.resolve("idna").to_dict()
 #  'filename': 'idna-3.20-py3-none-any.whl', 'skipped_size': 0, 'conflicts': [], 'warnings': []}
 ```
 
-Nodes with dependencies add a `dependencies` list; `via_extra`, `skipped` and `local` appear on the
+Nodes with dependencies add a `dependencies` list; `via_extra`, `skipped`, `local` and `built_from` appear on the
 nodes they apply to. This differs from [`pip-size --json`](../guide/output.md#json), which formats
 sizes as text and adds `*_bytes` fields: `to_dict()` always uses integers.
 
@@ -37,7 +37,8 @@ One node of the dependency tree.
 | `dependencies` | `list[PackageInfo]` | Direct dependencies, sorted by name. A package that several parents depend on appears once, under the first. |
 | `via_extra` | `str \| None` | The extra that pulled this package in, if any. |
 | `skipped` | `str \| None` | Why it is skipped (`"skip list"`, `"installed 1.26.4"`, ...), or `None`. |
-| `local` | `bool` | `True` for a wheel read from disk. |
+| `local` | `bool` | `True` for a wheel read from disk, or built from source. |
+| `built_from` | `str \| None` | The source the wheel was built from (a directory, URL or archive), or `None`. |
 
 | Method | Returns |
 | --- | --- |

@@ -5,9 +5,11 @@ and applies the same selection rules pip does.
 
 ```mermaid
 flowchart TB
-    A["pip-size spec<br/>name, requirement or .whl path"] --> B{"local .whl?"}
-    B -- yes --> C["read size and METADATA<br/>from the file"]
-    B -- no --> D["PyPI Simple API<br/>versions, file names, sizes"]
+    A["pip-size spec"] --> B{"what is it?"}
+    B -- ".whl file" --> C["read size and METADATA<br/>from the file"]
+    B -- "directory, git URL, sdist" --> S["build a wheel<br/>in a temporary directory"]
+    S --> C
+    B -- "package name" --> D["PyPI Simple API<br/>versions, file names, sizes"]
     D --> E["pick version and best file<br/>for this Python and platform"]
     E --> F["PyPI release JSON<br/>requires_dist only"]
     C --> G["evaluate markers and extras"]
@@ -24,7 +26,8 @@ flowchart TB
 
 For each package, `pip-size` reads the PyPI [Simple API](https://peps.python.org/pep-0691/) in its
 JSON form: every release with its file names and file sizes. A local `.whl` is read from disk
-instead.
+instead. A directory, VCS URL or sdist is first built into a wheel, see
+[Directories, git URLs and archives](../guide/source-builds.md).
 
 ## 2. Choose a version
 

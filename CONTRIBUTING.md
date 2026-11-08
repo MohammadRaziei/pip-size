@@ -65,6 +65,7 @@ version matrix.
 | `selector.py` | Best file for the platform, best version for a specifier. |
 | `skip.py` | Skip rules: names, globs, installed packages, freeze files. |
 | `wheel.py` | Reading size and `METADATA` from a local `.whl`. |
+| `build.py` | Building a wheel from a directory, VCS URL or archive (pip, or uv). |
 | `models.py` | Result types: `PackageInfo`, `Conflict`, `Resolution`. |
 | `cache.py` | On-disk response cache. |
 | `printer.py` | Tree, JSON and plain output. |

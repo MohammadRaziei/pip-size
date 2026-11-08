@@ -6,6 +6,10 @@ public API between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- **Build from source.** A project directory, a VCS URL (`git+https://...`), an sdist archive, or a direct reference (`name @ url`) is first built into a wheel and then sized like a local wheel. The root is tagged `[built from source]`; `PackageInfo.built_from`, `LocalWheel.built_from` and a `built_from` JSON field carry the source. Directories are built from a temporary copy, so your tree is not modified. Builds use pip, or `uv` for directories and archives when pip is not installed. Failures raise the new `BuildError`.
+
 ## [0.3.1] - 2026-11-08
 
 ### Added

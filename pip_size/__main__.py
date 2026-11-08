@@ -46,7 +46,7 @@ def main() -> None:
         "package",
         nargs="?",
         help='a requirement ("requests", "requests==2.31.0", "requests[security]") '
-             'or the path to a local .whl file (optionally "x.whl[extra]")',
+             'or the path to a local .whl file (optionally "x.whl[extra]"), or a source to build a wheel from first: a project directory, an sdist archive, or a VCS URL ("git+https://...")',
     )
     parser.add_argument("--version", action="version", version=f"pip-size {__version__}")
     parser.add_argument(

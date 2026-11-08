@@ -89,6 +89,7 @@ nav:
       - Extras: guide/extras.md
       - Skipping dependencies: guide/skipping.md
       - Local wheels: guide/local-wheels.md
+      - Directories and git URLs: guide/source-builds.md
       - Output formats: guide/output.md
       - Proxies and cache: guide/network.md
       - Use in CI: guide/ci.md

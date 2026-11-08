@@ -5,8 +5,9 @@ pip-size [options] package
 ```
 
 `package` is a requirement (`requests`, `requests==2.31.0`, `requests[socks]`, `httpx>=0.27,<1`)
-or the path to a [local wheel](guide/local-wheels.md) (`./dist/mypkg-1.0-py3-none-any.whl`,
-optionally with extras: `...whl[server]`).
+the path to a [local wheel](guide/local-wheels.md) (`./dist/mypkg-1.0-py3-none-any.whl`, optionally
+with extras: `...whl[server]`), or a source to build a wheel from first: a project directory, a VCS
+URL or an sdist, see [Directories, git URLs and archives](guide/source-builds.md).
 
 ## Options
 
@@ -98,6 +99,8 @@ Lowercase spellings (`https_proxy`, ...) work too.
 pip-size "requests[socks]" --skip idna        # extras and skipping together
 pip-size mypkg --extras "test,dev*" --no-deps  # the package alone, with extras named
 pip-size ./dist/mypkg-*.whl --skip-installed   # the glob must match exactly one file
+pip-size ./my-project                          # builds a wheel from the directory first
+pip-size "git+https://github.com/owner/repo"   # ... or from a git URL
 pip freeze | pip-size fastapi --skip-file -    # size against a freeze from stdin
 pip-size fastapi --json | python -m json.tool  # pretty-print the JSON
 ```
@@ -116,7 +119,9 @@ Calculate real download size of a PyPI package. Zero downloads.
 
 positional arguments:
   package               a requirement ("requests", "requests==2.31.0", "requests[security]")
-                        or the path to a local .whl file (optionally "x.whl[extra]")
+                        or the path to a local .whl file (optionally "x.whl[extra]"), or a
+                        source to build a wheel from first: a project directory, an sdist
+                        archive, or a VCS URL ("git+https://...")
 
 options:
   -h, --help            show this help message and exit
