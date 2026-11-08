@@ -1,28 +1,54 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/mohammadraziei/pip-size/master/assets/logo.svg" width="128" alt="pip-size logo"/>
+
 # pip-size
 
-[![PyPI - Version](https://img.shields.io/pypi/v/pip-size.svg)](https://pypi.org/project/pip-size)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pip-size.svg)](https://pypi.org/project/pip-size)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**See the real install size of a PyPI package, dependencies included, without downloading anything.**<br/>
+No pip subprocess, no virtualenv, no wheel downloads.
 
-**Calculate the real download size of PyPI packages and their dependencies — zero downloads, no pip subprocess, pure PyPI JSON API.**
+[![PyPI](https://img.shields.io/pypi/v/pip-size.svg)](https://pypi.org/project/pip-size)
+[![Python](https://img.shields.io/pypi/pyversions/pip-size.svg)](https://pypi.org/project/pip-size)
+[![CI](https://github.com/mohammadraziei/pip-size/actions/workflows/wheel.yml/badge.svg)](https://github.com/mohammadraziei/pip-size/actions/workflows/wheel.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 
----
+[Quick start](#quick-start) ·
+[Skipping](#skipping-dependencies) ·
+[Local wheels](#local-wheels) ·
+[Python API](#python-api) ·
+[How it works](#how-it-works)
 
-## Why pip-size?
-
-A package's size alone tells you very little. What you actually pay — in bandwidth, install time, and disk space — is the size of that package **plus every dependency it pulls in**.
-
-A library advertised as "lightweight" may itself be tiny, while silently dragging in hundreds of megabytes of transitive dependencies. That's not a fair comparison. `pip-size` makes the full picture visible before you install anything.
-
-Use it to:
-
-- **Compare alternatives fairly** — e.g. `httpx` vs `requests` vs `aiohttp`, each with their full dependency tree, without installing any of them
-- **Audit your own packages** — check what you're actually shipping to your users
-- **Spot unexpectedly heavy dependencies** — find which dep in the tree is responsible for the bulk of the size
-- **Understand optional extras** — see exactly how much `requests[security]` adds over plain `requests`
-- **Automate size checks** in CI with `--quiet` and `--bytes`
+</div>
 
 ---
+
+```bash
+pip install pip-size
+pip-size requests
+```
+
+```text
+  requests==2.34.2  71.4 KB  (total: 655.3 KB)
+  ├── certifi==2026.10.23  131.9 KB
+  ├── charset_normalizer==3.5.2  251.6 KB
+  ├── idna==3.20  68.0 KB
+  └── urllib3==2.8.0  132.5 KB
+```
+
+A package's own size says little. What you pay in bandwidth, install time and disk is that
+package **plus everything it pulls in**. `pip-size` resolves the full dependency tree from PyPI
+metadata and adds it up, so you can compare `httpx` with `requests` or check what your own
+release costs your users before anyone installs anything.
+
+## Highlights
+
+- **The whole tree, with sub-totals.** Every node shows its own size; nodes with dependencies also show the total of their sub-tree, so the heavy branch is easy to spot.
+- **Nothing is downloaded.** Versions, file names and sizes come from the PyPI Simple API; only the dependency list of the chosen release is fetched separately. A cold run of `fastapi[standard]` took about a second in our test (one run, fast connection); results are cached for 24 hours.
+- **Picks files the way pip does.** Wheel tags of the running interpreter, `requires-python`, environment markers and extras are honoured; yanked files are ignored.
+- **Works on a wheel you just built.** Point it at a `.whl` file: its size and `METADATA` are read from disk, the rest is resolved from PyPI.
+- **Skip what is already there.** Keep numpy, torch or anything installed in the tree with its size, but leave it out of the total.
+- **Made for scripts and CI.** `--quiet --bytes` prints one number, `--json` prints only JSON, and an unresolvable package exits with status 1.
+- **Also a library.** `pip_size.resolve()` returns plain data and prints nothing.
 
 ## Installation
 
@@ -30,63 +56,141 @@ Use it to:
 pip install pip-size
 ```
 
----
+Requires Python 3.9 or newer.
 
-## Quick Start
+| Command | Adds |
+| --- | --- |
+| `pip install "pip-size[socks]"` | SOCKS4/SOCKS5 proxy support (`aiohttp-socks`). |
+
+## Quick start
 
 ```bash
 # Full dependency tree
 pip-size requests
 
-# Package alone, no deps
+# The package alone
 pip-size requests --no-deps
 
-# Specific version
+# A specific version, or extras, like pip
 pip-size "requests==2.31.0"
+pip-size "requests[socks]"
 
-# With extras
-pip-size "requests[security]"
+# Just the number, for scripts
+pip-size requests --quiet            # 655.3 KB
+pip-size requests --quiet --bytes    # raw bytes
 
-# Quiet mode — just the number, useful in scripts
-pip-size requests --quiet
-
-# JSON output
-pip-size requests --json
-
-# A wheel you just built (size + METADATA are read from the file)
+# A wheel you just built
 pip-size ./dist/mypkg-1.0-py3-none-any.whl
 
-# Don't count what the target machine already has
+# Do not count what the target machine already has
 pip-size fastapi --skip-installed
-pip-size fastapi --skip numpy,pandas
 ```
 
-### Example Output
+CI size budget (fails the step when the package cannot be resolved or is too big):
 
-```
-$ pip-size requests
-
-🔍 Resolving 'requests'...
-  ✓ requests==2.32.5  →  requests-2.32.5-py3-none-any.whl
-    ✓ urllib3==2.3.0  →  urllib3-2.3.0-py3-none-any.whl
-    ✓ charset-normalizer==3.4.1  →  charset_normalizer-3.4.1-py3-none-any.whl
-    ✓ certifi==2025.1.31  →  certifi-2025.1.31-py3-none-any.whl
-    ✓ idna==3.10  →  idna-3.10-py3-none-any.whl
-
-  requests==2.32.5  63.2 KB  (total: 834.8 KB)
-  ├── urllib3==2.3.0  341.8 KB
-  ├── charset-normalizer==3.4.1  204.8 KB
-  ├── certifi==2025.1.31  164.0 KB
-  └── idna==3.10  61.4 KB
+```bash
+test "$(pip-size ./dist/mypkg-*.whl --quiet --bytes --skip-installed)" -lt 5000000
 ```
 
-Every node shows its own size. Nodes that have sub-dependencies additionally show `(total: ...)` so you can see the weight of an entire sub-tree at a glance.
+## Skipping dependencies
 
----
+Some dependencies cost your users nothing because they are already there (numpy on a data
+science box, torch on a GPU image). Skipped packages **stay in the tree with their size**,
+tagged `[skipped: ...]`, but are not added to the total and their own dependencies are not
+expanded:
 
-## All Options
-
+```bash
+pip-size requests --skip "idna,cert*"
 ```
+
+```text
+  requests==2.34.2  71.4 KB  (total: 455.5 KB)
+  ├── certifi==2026.10.23  131.9 KB  [skipped: skip list]
+  ├── charset_normalizer==3.5.2  251.6 KB
+  ├── idna==3.20  68.0 KB  [skipped: skip list]
+  └── urllib3==2.8.0  132.5 KB
+
+  Total to download : 455.5 KB
+  Skipped           : 199.9 KB  (2 package(s), not counted)
+```
+
+| Option | Skips |
+| --- | --- |
+| `--skip numpy,"nvidia-*"` | These names and glob patterns (repeatable; `Typing_Extensions` equals `typing-extensions`). |
+| `--skip-installed` | Whatever is installed in the current environment. |
+| `--installed-from /opt/venv/bin/python` | Whatever is installed in that interpreter's environment. Implies `--skip-installed`. |
+| `--skip-file freeze.txt` | Every package in a `pip freeze` or requirements file. `-` reads stdin: `pip freeze \| pip-size pkg --skip-file -`, which also works for a freeze taken on another machine. |
+
+Installed or frozen packages are skipped only when their version **satisfies the requirement**:
+numpy 1.26 installed but `numpy>=2` required means pip would download it, so it still counts.
+The root package is never skipped. The size shown for a skipped package is the file pip would
+pick for the requirement, which is not necessarily the installed version.
+
+## Local wheels
+
+Give `pip-size` the path to a `.whl` instead of a package name:
+
+```bash
+pip-size ./dist/mypkg-1.0-py3-none-any.whl
+pip-size "./dist/mypkg-1.0-py3-none-any.whl[server]"   # extra, like mypkg[server]
+pip-size ./dist/mypkg-*.whl --skip-installed           # the glob must match exactly one file
+```
+
+The size is the file's size on disk, the dependency list comes from `*.dist-info/METADATA`
+inside the wheel, and everything below it is resolved from PyPI as usual. The root line is
+tagged `[local wheel]`. A missing file, a file that is not a zip, or a wheel without `METADATA`
+gives a clear error and exit status 1.
+
+## Extras
+
+```bash
+pip-size "requests[socks]"            # like pip: activate extras named in the spec
+pip-size requests --extras socks      # same, via a flag
+pip-size mypkg --extras "test,dev*"   # comma-separated, glob patterns allowed
+pip-size mypkg --extras "*"           # every extra declared by the root package
+pip-size requests -a                  # worst case: every extra of the root package
+```
+
+`-a` / `--all-extras` is the worst-case install of the package you ask about:
+
+```text
+$ pip-size requests -a
+
+  requests==2.34.2  71.4 KB  (total: 2.2 MB)
+  ├── certifi==2026.10.23  131.9 KB
+  ├── chardet==7.7.0  1.6 MB  [extra: use-chardet-on-py3]
+  ├── charset_normalizer==3.5.2  251.6 KB
+  ├── idna==3.20  68.0 KB
+  ├── PySocks==1.7.1  16.3 KB  [extra: socks]
+  └── urllib3==2.8.0  132.5 KB
+```
+
+Extras of *dependencies* are activated only when their parent asks for them (`httpx[http2]`),
+exactly as pip does. Each extra-gated package is labelled `[extra: <name>]`. `-a` can be combined
+with `--extras`.
+
+> [!WARNING]
+> `--all-extras-deep` activates every extra of every package at every level, test and dev extras
+> included. It is unbounded: when this README was written, `pip-size requests --all-extras-deep`
+> resolved about 7,000 packages and reported 25.1 GB. It exists for completeness; for realistic
+> numbers use `-a` or `--extras`.
+
+## CLI essentials
+
+| Flag | What it does |
+| --- | --- |
+| `--no-deps` | Size of the package itself only. |
+| `--extras PATTERNS`, `-a` | Activate chosen extras / every extra of the root package. |
+| `--all-extras-deep` | Every extra of every dependency too (unbounded, see the warning above). |
+| `--skip`, `--skip-installed`, `--installed-from`, `--skip-file` | Keep dependencies in the tree but out of the total. |
+| `--quiet`, `--bytes`, `--json` | Print only the total / raw bytes / the tree as JSON. |
+| `--proxy URL`, `--no-cache`, `--clear-cache` | Network and cache control. |
+| `--verbose`, `--extra-verbose` | INFO / DEBUG logging. |
+
+<details>
+<summary>Full option list</summary>
+
+```text
 pip-size [package] [options]
 
 positional arguments:
@@ -95,19 +199,21 @@ positional arguments:
 
 dependency options:
   --no-deps             Show size of the package itself only, no dependency resolution.
-  -a, --all-extras      Include ALL optional (extra-gated) dependencies across the
-                        entire tree. Each one is labelled [extra: <n>] in the output.
+  -a, --all-extras      Activate EVERY extra declared by the root package (worst-case
+                        install of this package). Extras of dependencies are activated
+                        only when their parent requests them, like pip.
+  --all-extras-deep     Like --all-extras, but also every extra of every dependency at
+                        every level. Unbounded: can resolve thousands of packages.
   --extras PATTERNS     Activate specific extras for the ROOT package only.
                         Comma-separated, supports glob wildcards:
                           --extras test
                           --extras 'test,dev'
                           --extras 'dev*'
                           --extras '*'
-                        Can be combined with --all-extras.
+                        Can be combined with -a.
 
 skipping options:
   --skip NAMES          Package names or glob patterns to skip (comma-separated, repeatable).
-                          --skip numpy,pandas --skip 'nvidia-*'
   --skip-installed      Skip packages already installed in this environment
                         (only when the installed version satisfies the requirement).
   --installed-from PYTHON
@@ -134,228 +240,134 @@ logging:
   --extra-verbose       Enable DEBUG logging (HTTP, wheel scoring, markers, cache).
 ```
 
----
-
-## Extras
-
-### Explicit extras in the package spec
-
-Works exactly like pip:
-
-```bash
-pip-size "requests[security]"
-pip-size "fastapi[standard]"
-```
-
-Only the extras you name are activated — their sub-dependencies are resolved, but those sub-packages' own optional deps are not pulled in unless you also pass `--all-extras`.
-
-### `--extras` — glob patterns for the root package
-
-When you don't want to type the full bracket syntax, or when you want wildcards:
-
-```bash
-pip-size requests --extras security
-pip-size mypackage --extras 'test,dev'
-pip-size mypackage --extras 'dev*'   # dev, dev-tools, development, ...
-pip-size mypackage --extras '*'      # every declared extra
-```
-
-### `-a` / `--all-extras` — every optional dep in the whole tree
-
-```bash
-pip-size requests -a
-```
-
-Walks the entire dependency tree and includes every optional dependency at every level, labelling each with `[extra: <n>]`. Useful for a worst-case size estimate.
-
-Can be combined with `--extras`:
-
-```bash
-# Activate 'test' on the root, AND include all optionals everywhere else
-pip-size mypackage --extras test --all-extras
-```
-
----
-
-## Local wheels
-
-Point `pip-size` at a `.whl` file instead of a package name. The size is the file's size on
-disk, the dependency list is read from `*.dist-info/METADATA` inside the wheel, and everything
-below that is resolved from PyPI as usual:
-
-```bash
-pip-size ./dist/mypkg-1.0-py3-none-any.whl
-pip-size "./dist/mypkg-1.0-py3-none-any.whl[server]"   # activate an extra, like pkg[server]
-pip-size ./dist/mypkg-1.0-py3-none-any.whl --skip-installed
-```
-
-Handy as a pre-release check: "how much will users actually download when they install this?"
-
----
-
-## Skipping dependencies
-
-Some dependencies cost nothing to *your* users because they are already there (numpy on a
-data-science box, torch on a GPU image). Skipped packages are **still listed in the tree with
-their size**, tagged `[skipped: ...]`, but they are not added to the total and their own
-dependencies are not expanded:
-
-```
-$ pip-size requests --skip idna,cert*
-
-  requests==2.34.2  71.4 KB  (total: 455.5 KB)
-  ├── certifi==2026.10.23  131.9 KB  [skipped: skip list]
-  ├── charset_normalizer==3.5.2  251.6 KB
-  ├── idna==3.20  68.0 KB  [skipped: skip list]
-  └── urllib3==2.8.0  132.5 KB
-
-  Total to download : 455.5 KB
-  Skipped           : 199.9 KB  (2 package(s), not counted)
-```
-
-| Option | Skips |
-|---|---|
-| `--skip numpy,'nvidia-*'` | exactly these names / glob patterns (names are normalised: `Typing_Extensions` = `typing-extensions`) |
-| `--skip-installed` | whatever is installed in the current environment |
-| `--installed-from /opt/venv/bin/python` | whatever is installed in *that* interpreter's environment |
-| `--skip-file freeze.txt` | every package in a `pip freeze` / requirements file; `-` reads stdin, so `pip freeze \| pip-size pkg --skip-file -` works, also for a freeze taken on another machine |
-
-Installed / frozen packages are only skipped when their version **satisfies the requirement**
-(numpy 1.26 installed but `numpy>=2` required → pip would download it, so it is still counted).
-The root package is never skipped. The size shown for a skipped package is the file pip would
-pick for the requirement, not necessarily the installed version.
-
----
+</details>
 
 ## Python API
 
 ```python
 import pip_size
 
-res = pip_size.resolve("requests")                        # sync;  `await pip_size.resolve_async(...)` in async code
+res = pip_size.resolve("requests")                      # in async code: await pip_size.resolve_async(...)
 res = pip_size.resolve("./dist/mypkg-1.0-py3-none-any.whl")
 res = pip_size.resolve("fastapi", skip=["numpy", "nvidia-*"], skip_installed=True)
 
-res.total_size            # bytes to download (skipped packages not counted)
-res.skipped_size          # bytes of the skipped packages
-res.root                  # PackageInfo tree: .name .version .size .filename .skipped .dependencies
-res.packages              # the whole tree flattened, root first
-res.skipped               # only the skipped ones
-res.conflicts             # version conflicts found in the tree
-res.warnings              # dependencies that could not be resolved (non-fatal)
-res.to_dict()             # plain data, all sizes in bytes
+res.total_size      # bytes to download, skipped packages not counted
+res.skipped_size    # bytes of the skipped packages
+res.packages        # the whole tree flattened, root first
+res.skipped         # only the skipped packages
+res.conflicts       # version conflicts found in the tree
+res.warnings        # dependencies that could not be resolved (non-fatal)
+res.to_dict()       # plain data, all sizes in bytes
 
 for pkg in res.packages:
     print(pkg.name, pkg.version, pkg.size, pkg.skipped or "")
 ```
 
-`resolve()` prints nothing and returns data. Pass `progress=print` to see resolver progress.
-It raises `pip_size.ResolutionError` (or `WheelError` / `SkipSourceError`, all subclasses of
-`PipSizeError`) when the root package cannot be resolved, and accepts the same options as the
-CLI: `no_deps`, `all_extras`, `extras`, `skip`, `skip_installed`, `skip_files`,
-`installed_from`, `use_cache`, `proxy`.
+| Argument | Meaning |
+| --- | --- |
+| `spec` | A requirement string, a `Requirement`, or the path to a `.whl` (optionally `x.whl[extra]`). |
+| `no_deps`, `all_extras`, `all_extras_deep`, `extras` | Same as the CLI flags. |
+| `skip`, `skip_installed`, `skip_files`, `installed_from` | Skip rules. `skip_rules=SkipRules(...)` passes a prebuilt set instead. |
+| `use_cache`, `proxy`, `progress` | Cache, proxy, and an optional callback that receives progress lines. |
 
-The CLI exit code is `1` when the package cannot be resolved, so it is safe to use in CI:
+`resolve()` prints nothing. It raises `pip_size.ResolutionError` when the root package cannot be
+resolved (`WheelError` and `SkipSourceError` for a bad wheel or skip source; all derive from
+`PipSizeError`).
 
-```bash
-test "$(pip-size mypkg --quiet --bytes --skip-installed)" -lt 5000000
-```
+## JSON output
 
----
-
-## Proxy Support
-
-```bash
-# HTTP proxy
-pip-size requests --proxy http://user:pass@host:8080
-
-# SOCKS5 proxy  (pip install aiohttp-socks)
-pip-size requests --proxy socks5://host:1080
-
-# Via environment variable (--proxy flag takes precedence)
-HTTP_PROXY=http://host:8080 pip-size requests
-ALL_PROXY=socks5://host:1080 pip-size requests
-```
-
----
-
-## Caching
-
-API responses are cached locally for 24 hours to avoid repeated requests to PyPI.
-
-| Platform | Cache location |
-|---|---|
-| Linux / macOS | `~/.cache/pip-size/` (respects `$XDG_CACHE_HOME`) |
-| Windows | `%LOCALAPPDATA%\pip-size\Cache\` |
-
-```bash
-pip-size --clear-cache          # wipe the entire cache
-pip-size requests --no-cache    # skip cache for this run only
-```
-
----
-
-## JSON Output
-
-```bash
-$ pip-size requests --json
-```
+`pip-size idna --json` prints exactly this and nothing else on stdout:
 
 ```json
 {
-  "name": "requests",
-  "version": "2.32.5",
-  "size": "63.2 KB",
-  "total_size": "834.8 KB",
-  "filename": "requests-2.32.5-py3-none-any.whl",
-  "dependencies": [
-    {
-      "name": "urllib3",
-      "version": "2.3.0",
-      "size": "341.8 KB",
-      "total_size": "341.8 KB",
-      "filename": "urllib3-2.3.0-py3-none-any.whl"
-    },
-    {
-      "name": "certifi",
-      "version": "2025.1.31",
-      "size": "164.0 KB",
-      "total_size": "164.0 KB",
-      "filename": "certifi-2025.1.31-py3-none-any.whl"
-    }
-  ]
+  "name": "idna",
+  "version": "3.20",
+  "size": "68.0 KB",
+  "size_bytes": 69583,
+  "total_size": "68.0 KB",
+  "total_size_bytes": 69583,
+  "filename": "idna-3.20-py3-none-any.whl"
 }
 ```
 
-Every node also carries `size_bytes` and `total_size_bytes` (integers). Skipped packages carry
-`"skipped": "<reason>"`, a local wheel carries `"local": true`, and the root node adds
-`skipped_size` / `skipped_size_bytes` / `skipped_count` when something was skipped, plus
-`conflicts` / `warnings` when there are any. With `--json` (and `--quiet`) nothing but the
-JSON document is written to stdout.
+Nodes with dependencies add a `dependencies` list. Skipped packages carry `"skipped": "<reason>"`,
+extra-gated ones `"via_extra"`, a local wheel `"local": true`. The root node adds
+`skipped_size`, `skipped_size_bytes` and `skipped_count` when something was skipped, and
+`conflicts` / `warnings` when there are any.
 
----
+## How it works
 
-## How It Works
+```mermaid
+flowchart TB
+    A["pip-size spec<br/>name, requirement or .whl path"] --> B{"local .whl?"}
+    B -- yes --> C["read size and METADATA<br/>from the file"]
+    B -- no --> D["PyPI Simple API<br/>versions, file names, sizes"]
+    D --> E["pick version and best file<br/>for this Python and platform"]
+    E --> F["PyPI release JSON<br/>requires_dist only"]
+    C --> G["evaluate markers and extras"]
+    F --> G
+    G --> H{"skip rule matches?"}
+    H -- yes --> I["keep in tree with size<br/>mark as skipped, do not expand"]
+    H -- no --> J["next BFS layer<br/>fetched concurrently"]
+    J --> D
+    I --> K["tree, JSON or total"]
+    J --> K
+```
 
-1. Lists every release of a project from the PyPI Simple API (`/simple/<name>/`, PEP 691 JSON) — file names and sizes, no package download. A local `.whl` is read from disk instead.
-2. Resolves the version specifier: highest matching version that has a file usable on your interpreter and platform; yanked files are ignored, pre-releases only when asked for or unavoidable
-3. Selects the best wheel for your platform, mirroring pip's priority order
-4. Reads `requires_dist` of the chosen release (`/pypi/<name>/<version>/json`) and resolves the dependency graph in BFS layers — each layer is fetched concurrently
-5. Evaluates environment markers (Python version, OS, extras) to include only relevant deps
-6. Applies skip rules, then caches every API response locally with a 24-hour TTL
+1. Lists every release of a project from the [Simple API](https://peps.python.org/pep-0691/) (JSON) with file names and sizes. A local wheel is read from disk instead.
+2. Resolves the specifier to the highest matching version that has a file usable on your interpreter and platform. Pre-releases are considered only when the specifier asks for them or nothing else matches.
+3. Chooses the best wheel by pip's tag priority, falling back to an sdist.
+4. Reads `requires_dist` of that release and walks the graph in breadth-first layers, each layer fetched concurrently.
+5. Evaluates environment markers and extras, applies skip rules, and caches every response for 24 hours.
 
-### Limitations
+**Limitations**
 
-- Each package is resolved **once**, against the first requirement that mentions it (not a full pip-style backtracking resolver). If another requirement in the tree rejects that version, `pip-size` reports a version conflict instead of silently ignoring it. A package shared by several parents appears once, under the first.
+- Each package is resolved once, against the first requirement that mentions it. This is not a backtracking resolver like pip's. If another requirement in the tree rejects the selected version, `pip-size` reports a version conflict instead of ignoring it. A package shared by several parents appears once, under the first.
 - Extras requested on a dependency that was already resolved without them are not merged in.
-- Wheel and marker selection use the interpreter that runs `pip-size`.
+- Wheel and marker selection use the interpreter that runs `pip-size`, even with `--installed-from`.
 
----
+> [!NOTE]
+> Sizes are those of the distribution files on PyPI (compressed). Installed size on disk differs.
+
+## Caching and proxies
+
+Responses are cached for 24 hours: `~/.cache/pip-size/` on Linux and macOS (honours
+`$XDG_CACHE_HOME`), `%LOCALAPPDATA%\pip-size\Cache\` on Windows.
+
+```bash
+pip-size --clear-cache                                  # wipe the cache
+pip-size requests --no-cache                            # skip it for this run
+pip-size requests --proxy http://user:pass@host:8080    # HTTP proxy
+pip-size requests --proxy socks5://host:1080            # needs pip-size[socks]
+HTTPS_PROXY=http://host:8080 pip-size requests          # environment variables also work
+```
+
+## Development
+
+```bash
+git clone https://github.com/mohammadraziei/pip-size
+cd pip-size
+pip install -e . pytest
+pytest
+```
+
+The tests run offline against an in-memory fake of PyPI.
+
+<details>
+<summary>Project layout</summary>
+
+| Module | Responsibility |
+| --- | --- |
+| `api.py` | Public `resolve()` / `resolve_async()` and the CLI-style `PipSize` class. |
+| `resolver.py` | Breadth-first dependency resolution, markers, extras, skip rules, conflicts. |
+| `client.py` | Async PyPI client (Simple API and release JSON), proxies. |
+| `selector.py` | Best file for the platform and best version for a specifier. |
+| `skip.py` | Skip rules: names, globs, installed packages, freeze files. |
+| `wheel.py` | Reading size and `METADATA` from a local `.whl`. |
+| `models.py`, `cache.py`, `printer.py`, `errors.py` | Result types, on-disk cache, output formatting, exceptions. |
+
+</details>
 
 ## License
 
-`pip-size` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
-
----
-
-> **Note:** `pip-size` provides estimates based on PyPI metadata. Actual installed sizes may differ slightly due to compression and platform-specific factors.
+MIT, see [LICENSE.txt](LICENSE.txt).

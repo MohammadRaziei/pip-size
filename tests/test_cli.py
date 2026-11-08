@@ -91,3 +91,10 @@ def test_bad_wheel_is_a_clean_error(monkeypatch, capsys, tmp_path):
     bad.write_text("nope")
     assert run_cli(monkeypatch, str(bad)) == 1
     assert "not a valid wheel" in capsys.readouterr().err
+
+
+def test_all_extras_flags(monkeypatch, capsys):
+    ok_cli(monkeypatch, "root", "-a", "--quiet", "--bytes")
+    assert capsys.readouterr().out.strip() == "1260"
+    ok_cli(monkeypatch, "root", "--all-extras-deep", "--quiet", "--bytes")
+    assert capsys.readouterr().out.strip() == "1267"

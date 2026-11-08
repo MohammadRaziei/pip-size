@@ -60,13 +60,15 @@ class DependencyResolver:
         self,
         client:         PyPIClient,
         all_extras:     bool                    = False,
+        all_extras_deep: bool                   = False,
         extras_filter:  set[str] | None         = None,
         no_deps:        bool                    = False,
         skip:           SkipRules | None        = None,
         progress:       Callable[[str], None] | None = None,
     ) -> None:
         self._client        = client
-        self._all_extras    = all_extras
+        self._all_extras    = all_extras           # every extra of the ROOT package
+        self._all_extras_deep = all_extras_deep    # ... and of every dependency, at every level
         self._extras_filter = extras_filter   # glob patterns for root-level extras
         self._no_deps       = no_deps
         self._skip          = skip or SkipRules()
@@ -268,7 +270,7 @@ class DependencyResolver:
                 log.debug("could not parse requirement %r: %s", req_str, exc)
                 continue
 
-            triggered_by = self._evaluate_marker(req, active_extras)
+            triggered_by = self._evaluate_marker(req, active_extras, item.depth)
             if triggered_by is _SKIP:
                 continue
 
@@ -283,7 +285,7 @@ class DependencyResolver:
 
         return next_items
 
-    def _evaluate_marker(self, req: Requirement, active_extras: set[str]) -> object:
+    def _evaluate_marker(self, req: Requirement, active_extras: set[str], depth: int = 0) -> object:
         """
         Decides whether a dependency should be included, and under which extra (if any).
 
@@ -304,7 +306,12 @@ class DependencyResolver:
           2. If none match:
                - WITHOUT --all-extras → skip.
                - WITH    --all-extras → include if platform/python conditions are also
-                 met; label with the extra name extracted from the marker.
+                 met; label with the extra name extracted from the marker. This applies to
+                 the root package only (depth 0), as pip would: extras of a dependency are
+                 activated only when its parent asks for them (`httpx[http2]`).
+               - WITH    --all-extras-deep → same, but at every level of the tree. Unbounded:
+                 test/dev extras of dependencies are included, so trees can reach thousands
+                 of packages.
         """
         if not req.marker:
             return None
@@ -330,7 +337,7 @@ class DependencyResolver:
                     return marker_extra
 
         # No active extra matched.
-        if not self._all_extras:
+        if not (self._all_extras_deep or (self._all_extras and depth == 0)):
             log.debug("skip  %s  (optional; use --all-extras to include all)", req.name)
             return _SKIP
 

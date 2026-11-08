@@ -54,6 +54,7 @@ async def resolve_async(
     *,
     no_deps:        bool                         = False,
     all_extras:     bool                         = False,
+    all_extras_deep: bool                        = False,
     extras:         str | Iterable[str] | None   = None,
     skip:           str | Iterable[str]          = (),
     skip_installed: bool                         = False,
@@ -70,7 +71,8 @@ async def resolve_async(
     spec            a requirement ("requests", "requests==2.31.0", "requests[security]"),
                     a Requirement, or the path to a local .whl (optionally "x.whl[extra]")
     no_deps         only the package itself
-    all_extras      include every optional dependency in the whole tree
+    all_extras      activate every extra declared by the ROOT package
+    all_extras_deep also activate every extra of every dependency (unbounded: can resolve thousands of packages)
     extras          glob patterns for extras of the ROOT package ("test", "dev*", "*")
     skip            names / glob patterns to keep in the tree but not count
     skip_installed  also skip packages installed in this environment (version must satisfy the requirement)
@@ -106,6 +108,7 @@ async def resolve_async(
         resolver = DependencyResolver(
             client        = client,
             all_extras    = all_extras,
+            all_extras_deep = all_extras_deep,
             extras_filter = extras_filter,
             no_deps       = no_deps,
             skip          = rules,
@@ -141,6 +144,7 @@ class PipSize:
         self,
         no_deps:        bool                = False,
         all_extras:     bool                = False,
+        all_extras_deep: bool               = False,
         extras_filter:  set[str] | None     = None,
         use_cache:      bool                = True,
         proxy:          str | None          = None,
@@ -154,6 +158,7 @@ class PipSize:
     ) -> None:
         self.no_deps        = no_deps
         self.all_extras     = all_extras
+        self.all_extras_deep = all_extras_deep
         self.extras_filter  = extras_filter
         self.use_cache      = use_cache
         self.proxy          = proxy
@@ -186,6 +191,7 @@ class PipSize:
                 package_spec,
                 no_deps        = self.no_deps,
                 all_extras     = self.all_extras,
+                all_extras_deep = self.all_extras_deep,
                 extras         = self.extras_filter,
                 skip           = self.skip,
                 skip_installed = self.skip_installed,
@@ -216,7 +222,9 @@ class PipSize:
         notes = []
         if not self.use_cache:
             notes.append("cache disabled")
-        if self.all_extras:
+        if self.all_extras_deep:
+            notes.append("all extras, deep")
+        elif self.all_extras:
             notes.append("all extras")
         if self.extras_filter:
             notes.append(f"extras: {', '.join(sorted(self.extras_filter))}")

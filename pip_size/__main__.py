@@ -56,8 +56,18 @@ def main() -> None:
         "-a", "--all-extras",
         action="store_true",
         help=(
-            "Include ALL optional dependencies (extra-gated) across the entire "
-            "dependency tree. Each one is labelled [extra: <name>] in the output."
+            "Activate EVERY extra declared by the root package (worst-case install of this "
+            "package). Extras of dependencies are activated only when their parent requests "
+            "them, like pip. Each extra-gated package is labelled [extra: <name>]."
+        ),
+    )
+    parser.add_argument(
+        "--all-extras-deep",
+        action="store_true",
+        help=(
+            "Like --all-extras, but also activate every extra of every dependency at every "
+            "level. Unbounded: test/dev extras are included, so the tree can reach thousands "
+            "of packages."
         ),
     )
     parser.add_argument(
@@ -182,6 +192,7 @@ def main() -> None:
         ok = PipSize(
             no_deps       = args.no_deps,
             all_extras    = args.all_extras,
+            all_extras_deep = args.all_extras_deep,
             extras_filter = extras_filter,
             use_cache     = not args.no_cache,
             proxy         = args.proxy,

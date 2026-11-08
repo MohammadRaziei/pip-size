@@ -35,6 +35,11 @@ def test_resolve_options():
     assert pip_size.resolve("root", extras=["fan*"]).total_size == 1260
 
 
+def test_all_extras_options():
+    assert pip_size.resolve("root", all_extras=True).total_size == 1260
+    assert pip_size.resolve("root", all_extras_deep=True).total_size == 1267
+
+
 def test_progress_callback_receives_lines():
     lines = []
     pip_size.resolve("root", progress=lines.append)

@@ -57,6 +57,22 @@ def test_extras_glob_filter(capsys):
     assert capsys.readouterr().out.strip() == str(1000 + 200 + 50 + 10)
 
 
+def test_all_extras_covers_the_root_only(capsys):
+    PipSize(quiet=True, as_bytes=True, all_extras=True).run("root")
+    assert capsys.readouterr().out.strip() == str(1000 + 200 + 50 + 10)     # fancy yes, child[dev] no
+
+
+def test_all_extras_deep_reaches_dependencies(capsys):
+    PipSize(quiet=True, as_bytes=True, all_extras_deep=True).run("root")
+    assert capsys.readouterr().out.strip() == str(1000 + 200 + 50 + 10 + 7)
+
+
+def test_all_extras_still_honours_platform_markers(capsys):
+    PipSize(as_json=True, all_extras_deep=True).run("root")
+    names = {d["name"] for d in json.loads(capsys.readouterr().out)["dependencies"]}
+    assert "winonly" not in names
+
+
 def test_json_output_is_pure_json(capsys):
     """Regression: header / progress lines used to corrupt --json output."""
     PipSize(as_json=True).run("root")
