@@ -29,14 +29,18 @@ loop when it is created), so run the tests on 3.9 as well when you touch async c
 
 ### CI layout
 
-`.github/workflows/ci.yml` is the only workflow that reacts to events (pushes to `master`, `v*`
-tags, pull requests, manual runs). It does no work itself and calls three reusable workflows:
+`.github/workflows/ci.yml` is the only workflow that reacts to repository events (pushes to
+`master`, `v*` tags, pull requests). It does no work itself and calls three other workflows:
 
 | Workflow | Does |
 | --- | --- |
-| `_tests.yml` | Tests on Python 3.9 to 3.13, builds the sdist and wheel, smoke-tests the built wheel. |
-| `_docs.yml` | Builds the documentation (`mkdocs build --strict`); on `master` it also deploys to GitHub Pages. |
-| `_release.yml` | Creates the GitHub release and uploads to PyPI. Only for `v*` tags, after tests and docs pass. |
+| `tests.yml` | Tests on Python 3.9 to 3.13, builds the sdist and wheel, smoke-tests the built wheel. |
+| `docs.yml` | Builds the documentation (`mkdocs build --strict`); on `master` it also deploys to GitHub Pages. |
+| `release.yml` | Creates the GitHub release and uploads to PyPI. Only for `v*` tags, after tests and docs pass. |
+
+Each of the three can also be run alone from the Actions tab ("Run workflow"). `docs.yml` then
+deploys unless you untick *deploy*; `release.yml` must be run from a `v*` tag (choose it under
+*Use workflow from*) and builds the distributions itself.
 
 With [Hatch](https://hatch.pypa.io): `hatch run test`, or `hatch run all:test` for the whole
 version matrix.
@@ -80,7 +84,7 @@ mkdocs build --strict     # what CI runs: broken links fail the build
 ```
 
 With Hatch: `hatch run docs:serve` and `hatch run docs:build`. Pushes to `master` that touch the
-docs are published to GitHub Pages by the CI workflow (`.github/workflows/_docs.yml`).
+docs are published to GitHub Pages by the CI workflow (`.github/workflows/docs.yml`).
 
 ## Adding an option
 

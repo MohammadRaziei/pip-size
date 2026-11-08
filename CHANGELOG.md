@@ -14,7 +14,7 @@ public API between minor releases.
 
 - The README is shorter and links to the documentation site.
 - The logo moved from `assets/` to `docs/assets/`.
-- CI is one orchestrator workflow, `ci.yml`, that calls the reusable `_tests.yml`, `_docs.yml` and `_release.yml`. The `wheel.yml` workflow is gone, so the CI badge URL changed. Releases still start from a `v*` tag.
+- CI is one orchestrator workflow, `ci.yml`, that calls `tests.yml`, `docs.yml` and `release.yml`, each of which can also be run on its own from the Actions tab. The `wheel.yml` workflow is gone, so the CI badge URL changed. Releases still start from a `v*` tag.
 - The `--extras` and `--proxy` help texts were rewritten: their examples used to run together in `--help` output.
 
 ## [0.3.0] - 2026-11-08

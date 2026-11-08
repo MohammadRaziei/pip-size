@@ -1,7 +1,9 @@
-name: Tests (reusable)
+name: Tests
 
+# Called by ci.yml, and can be run on its own from the Actions tab.
 on:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read

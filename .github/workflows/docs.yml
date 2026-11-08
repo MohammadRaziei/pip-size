@@ -1,5 +1,7 @@
-name: Docs (reusable)
+name: Docs
 
+# Called by ci.yml, and can be run on its own from the Actions tab.
+# Run alone, it publishes to GitHub Pages unless you untick "deploy".
 on:
   workflow_call:
     inputs:
@@ -7,6 +9,12 @@ on:
         description: Publish the built site to GitHub Pages
         type: boolean
         default: false
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Publish the built site to GitHub Pages (run it from master)
+        type: boolean
+        default: true
 
 permissions:
   contents: read
