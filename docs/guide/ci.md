@@ -53,7 +53,6 @@ jobs:
 
 ## Tips
 
-- **Pin the version** you test with (`pip install pip-size==0.3.0`) so results do not change under you.
 - **Results depend on the runner**: the wheel for the runner's Python and platform is chosen. Use the same Python version as production. See [Limitations](../concepts/limitations.md).
 - **Network**: `pip-size` needs `pypi.org`. Use [`--proxy`](network.md) behind a corporate proxy.
 - **Exit status**: `0` resolved, `1` could not resolve or read an input, `2` bad command line. See [Command line](../cli.md#exit-status).

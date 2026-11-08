@@ -15,9 +15,9 @@ To look at a wheel without resolving anything, use `read_wheel`. It opens the fi
 parses `*.dist-info/METADATA`:
 
 ```python
-w = pip_size.read_wheel("./dist/pip_size-0.3.0-py3-none-any.whl")
+w = pip_size.read_wheel("./dist/pip_size-0.3.1-py3-none-any.whl")
 
-w.name, w.version                # ('pip-size', '0.3.0')
+w.name, w.version                # ('pip-size', '0.3.1')
 w.size                           # bytes of the .whl file
 w.requires_dist                  # ['aiohttp>=3.8.0', 'packaging', "aiohttp-socks; extra == 'socks'"]
 w.requires_python                # '>=3.9'

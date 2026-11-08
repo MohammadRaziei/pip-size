@@ -26,9 +26,7 @@ The same install provides the `pip-size` command and the `pip_size` Python modul
 pip-size --version
 ```
 
-```text
-pip-size 0.3.0
-```
+
 
 ## Optional extras
 

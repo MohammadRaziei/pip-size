@@ -6,6 +6,8 @@ public API between minor releases.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-08
+
 ### Added
 
 - A documentation site built with MkDocs Material (`docs/`, `mkdocs.yml`): getting started, a user guide, the Python API reference, how it works and limitations. It is built on every run and published to GitHub Pages from `master`.
@@ -13,7 +15,7 @@ public API between minor releases.
 ### Changed
 
 - The README is shorter and links to the documentation site.
-- The logo moved from `assets/` to `docs/assets/`.
+- The logo moved from `assets/` to `docs/assets/`; the README links to the new location, so the logo on the PyPI page works again.
 - CI is one orchestrator workflow, `ci.yml`, that calls `tests.yml`, `docs.yml` and `release.yml`, each of which can also be run on its own from the Actions tab. The `wheel.yml` workflow is gone, so the CI badge URL changed. Releases still start from a `v*` tag.
 - The `--extras` and `--proxy` help texts were rewritten: their examples used to run together in `--help` output.
 
@@ -50,6 +52,7 @@ public API between minor releases.
 
 See the [release page](https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0).
 
-[Unreleased]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MohammadRaziei/pip-size/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0
