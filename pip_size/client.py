@@ -98,7 +98,8 @@ class PyPIClient:
     ) -> None:
         self.proxy_url = resolve_proxy_url(proxy)
         self.use_cache = use_cache
-        self._sem      = asyncio.Semaphore(MAX_CONCURRENCY)
+        # Created in __aenter__: before Python 3.10 a Semaphore binds to the current event loop at construction.
+        self._sem: asyncio.Semaphore | None = None
         self._session: aiohttp.ClientSession | None = None
 
     # ── proxy helpers ────────────────────────────────────────────────
@@ -131,6 +132,7 @@ class PyPIClient:
     # ── session lifecycle ────────────────────────────────────────────
 
     async def __aenter__(self) -> PyPIClient:
+        self._sem = asyncio.Semaphore(MAX_CONCURRENCY)
         self._session = aiohttp.ClientSession(
             connector = self._make_connector(),
             headers   = {"User-Agent": "pip-size/1.0"},
@@ -142,6 +144,7 @@ class PyPIClient:
         if self._session:
             await self._session.close()
             self._session = None
+        self._sem = None
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -182,7 +185,7 @@ class PyPIClient:
     # ── internal ─────────────────────────────────────────────────────
 
     async def _get(self, url: str, accept: str) -> dict:
-        if self._session is None:
+        if self._session is None or self._sem is None:
             raise RuntimeError("PyPIClient must be used as an async context manager")
 
         log.debug("GET %s%s", url, f"  (proxy: {self.proxy_url})" if self.proxy_url else "")
