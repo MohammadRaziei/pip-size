@@ -4,13 +4,19 @@ No downloads. No pip subprocess. Pure PyPI JSON API + packaging.
 
 Usage:
     pip-size "requests"
+    pip-size ./dist/mypkg-1.0-py3-none-any.whl          # local wheel: size + METADATA read from the file
     pip-size "requests" --no-deps
     pip-size "requests==2.31.0"
-    pip-size "requests" --include-optional
+    pip-size "requests" --all-extras
     pip-size "requests" --verbose
     pip-size "requests" --extra-verbose
     pip-size "requests" --no-cache
     pip-size --clear-cache
+
+Skipping (kept in the tree, shown with their size, not counted in the total):
+    pip-size "fastapi" --skip numpy,pandas --skip "nvidia-*"
+    pip-size "fastapi" --skip-installed
+    pip freeze | pip-size "fastapi" --skip-file -
 
 Proxy support:
     pip-size "requests" --proxy http://user:pass@host:8080
@@ -38,7 +44,8 @@ def main() -> None:
     parser.add_argument(
         "package",
         nargs="?",
-        help='e.g. "requests" or "requests==2.31.0"',
+        help='a requirement ("requests", "requests==2.31.0", "requests[security]") '
+             'or the path to a local .whl file (optionally "x.whl[extra]")',
     )
     parser.add_argument(
         "--no-deps",
@@ -67,6 +74,39 @@ def main() -> None:
             "  --extras '*'           # every extra on the root package\n"
             "Can be combined with --all-extras."
         ),
+    )
+    skipping = parser.add_argument_group(
+        "skipping",
+        "Skipped dependencies stay in the tree with their size and are tagged [skipped: ...], "
+        "but are not added to the total and their own dependencies are not expanded.",
+    )
+    skipping.add_argument(
+        "--skip",
+        action="append",
+        default=[],
+        metavar="NAMES",
+        help="Comma-separated package names or glob patterns to skip (repeatable), e.g. numpy,'nvidia-*'.",
+    )
+    skipping.add_argument(
+        "--skip-installed",
+        action="store_true",
+        help="Skip packages already installed in this environment, "
+             "when the installed version satisfies the requirement.",
+    )
+    skipping.add_argument(
+        "--installed-from",
+        metavar="PYTHON",
+        default=None,
+        help="Like --skip-installed, but inspect the environment of this python executable "
+             "(e.g. /opt/venv/bin/python). Implies --skip-installed.",
+    )
+    skipping.add_argument(
+        "--skip-file",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Skip every package listed in a pip-freeze / requirements file (repeatable). "
+             "Use '-' to read stdin:  pip freeze | pip-size pkg --skip-file -",
     )
     parser.add_argument(
         "--proxy",
@@ -135,11 +175,11 @@ def main() -> None:
         parser.error("the following arguments are required: package")
 
     try:
-        extras_filter: set[str] | None = None
+        extras_filter = None
         if args.extras:
             extras_filter = {p.strip() for p in args.extras.split(",") if p.strip()}
 
-        PipSize(
+        ok = PipSize(
             no_deps       = args.no_deps,
             all_extras    = args.all_extras,
             extras_filter = extras_filter,
@@ -148,10 +188,15 @@ def main() -> None:
             quiet         = args.quiet,
             as_bytes      = args.bytes,
             as_json       = args.json,
+            skip          = args.skip,
+            skip_installed= args.skip_installed,
+            skip_files    = args.skip_file,
+            installed_from= args.installed_from,
         ).run(args.package)
+        if not ok:
+            sys.exit(1)
     except RuntimeError as exc:
-        log.error("%s", exc)
-        print(f"\n❌ Error: {exc}")
+        print(f"\n❌ Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

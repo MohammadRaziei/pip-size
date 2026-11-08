@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "pip-size"
 dynamic = ["version"]
-description = ""
+description = "Calculate the real download size of a PyPI package and its dependencies — zero downloads."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 license = "MIT"
-keywords = []
+keywords = ["pip", "pypi", "package-size", "dependencies", "wheel", "cli"]
 authors = [
   { name = "Mohammad Raziei", email = "mohammadraziei1375@gmail.com" },
 ]
@@ -19,6 +19,11 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
@@ -38,7 +43,6 @@ pip-size = "pip_size.__main__:main"
 [project.urls]
 Source = "https://github.com/mohammadraziei/pip-size"
 Issues = "https://github.com/mohammadraziei/pip-size/issues"
-Documentation = "https://mohammadraziei.github.io/pip-size" 
 
 
 [tool.hatch.version]
@@ -65,7 +69,7 @@ cov = [
 ]
 
 [[tool.hatch.envs.all.matrix]]
-python = ["3.7", "3.8", "3.9", "3.10", "3.11"]
+python = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
 [tool.hatch.envs.lint]
 detached = true
@@ -92,7 +96,7 @@ all = [
 ]
 
 [tool.black]
-target-version = ["py37"]
+target-version = ["py39"]
 line-length = 120
 skip-string-normalization = true
 
@@ -111,7 +115,7 @@ pythonpath = [
 
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py39"
 line-length = 120
 
 [tool.ruff.lint]  # Ruff linting configuration
