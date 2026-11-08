@@ -1,29 +1,15 @@
-name: Docs
+name: Docs (reusable)
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "CHANGELOG.md"
-      - "CONTRIBUTING.md"
-      - ".github/workflows/docs.yml"
-  pull_request:
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "CHANGELOG.md"
-      - "CONTRIBUTING.md"
-      - ".github/workflows/docs.yml"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      deploy:
+        description: Publish the built site to GitHub Pages
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-
-concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -38,17 +24,20 @@ jobs:
       - name: Build (broken links fail the build)
         run: mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+        if: inputs.deploy
         with:
           path: site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: inputs.deploy
     needs: build
     runs-on: ubuntu-latest
     permissions:
       pages: write
       id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

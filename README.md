@@ -10,7 +10,7 @@ Use it as a command-line tool, or import it as a Python library.
 
 [![PyPI](https://img.shields.io/pypi/v/pip-size.svg)](https://pypi.org/project/pip-size)
 [![Python](https://img.shields.io/pypi/pyversions/pip-size.svg)](https://pypi.org/project/pip-size)
-[![CI](https://github.com/MohammadRaziei/pip-size/actions/workflows/wheel.yml/badge.svg)](https://github.com/MohammadRaziei/pip-size/actions/workflows/wheel.yml)
+[![CI](https://github.com/MohammadRaziei/pip-size/actions/workflows/ci.yml/badge.svg)](https://github.com/MohammadRaziei/pip-size/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 
 [Documentation](https://mohammadraziei.github.io/pip-size/) ·

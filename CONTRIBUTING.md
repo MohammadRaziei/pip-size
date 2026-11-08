@@ -27,6 +27,17 @@ wheel against the real PyPI. Python 3.9 is the oldest supported version and diff
 places the other versions do not (for example, an `asyncio.Semaphore` binds to the current event
 loop when it is created), so run the tests on 3.9 as well when you touch async code.
 
+### CI layout
+
+`.github/workflows/ci.yml` is the only workflow that reacts to events (pushes to `master`, `v*`
+tags, pull requests, manual runs). It does no work itself and calls three reusable workflows:
+
+| Workflow | Does |
+| --- | --- |
+| `_tests.yml` | Tests on Python 3.9 to 3.13, builds the sdist and wheel, smoke-tests the built wheel. |
+| `_docs.yml` | Builds the documentation (`mkdocs build --strict`); on `master` it also deploys to GitHub Pages. |
+| `_release.yml` | Creates the GitHub release and uploads to PyPI. Only for `v*` tags, after tests and docs pass. |
+
 With [Hatch](https://hatch.pypa.io): `hatch run test`, or `hatch run all:test` for the whole
 version matrix.
 
@@ -69,7 +80,7 @@ mkdocs build --strict     # what CI runs: broken links fail the build
 ```
 
 With Hatch: `hatch run docs:serve` and `hatch run docs:build`. Pushes to `master` that touch the
-docs are published to GitHub Pages by `.github/workflows/docs.yml`.
+docs are published to GitHub Pages by the CI workflow (`.github/workflows/_docs.yml`).
 
 ## Adding an option
 
@@ -81,5 +92,5 @@ docs are published to GitHub Pages by `.github/workflows/docs.yml`.
 ## Releasing
 
 1. Bump the version in `pip_size/__about__.py` and add an entry to `CHANGELOG.md`.
-2. Push a tag named `vX.Y.Z`. The workflow in `.github/workflows/wheel.yml` runs the tests, builds
+2. Push a tag named `vX.Y.Z`. The CI workflow (`.github/workflows/ci.yml`) runs the tests, builds
    the distributions, creates the GitHub release and uploads to PyPI.

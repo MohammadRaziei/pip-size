@@ -8,12 +8,13 @@ public API between minor releases.
 
 ### Added
 
-- A documentation site built with MkDocs Material (`docs/`, `mkdocs.yml`): getting started, a user guide, the Python API reference, how it works and limitations. A workflow publishes it to GitHub Pages.
+- A documentation site built with MkDocs Material (`docs/`, `mkdocs.yml`): getting started, a user guide, the Python API reference, how it works and limitations. It is built on every run and published to GitHub Pages from `master`.
 
 ### Changed
 
 - The README is shorter and links to the documentation site.
 - The logo moved from `assets/` to `docs/assets/`.
+- CI is one orchestrator workflow, `ci.yml`, that calls the reusable `_tests.yml`, `_docs.yml` and `_release.yml`. The `wheel.yml` workflow is gone, so the CI badge URL changed. Releases still start from a `v*` tag.
 - The `--extras` and `--proxy` help texts were rewritten: their examples used to run together in `--help` output.
 
 ## [0.3.0] - 2026-11-08

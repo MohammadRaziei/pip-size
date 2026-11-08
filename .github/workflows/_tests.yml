@@ -1,18 +1,13 @@
-name: Build, Test & Release
+name: Tests (reusable)
 
 on:
-  workflow_dispatch:
-  pull_request:
-  push:
-    branches: [master]
-    tags: ["v*"]
+  workflow_call:
+
+permissions:
+  contents: read
 
 env:
   FORCE_COLOR: 3
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   unit_tests:
@@ -66,26 +61,3 @@ jobs:
         run: |
           pip-size ./dist/pip_size-*.whl --json | python -m json.tool
           pip-size ./dist/pip_size-*.whl --skip-installed --quiet --bytes
-
-  release:
-    name: GitHub release and PyPI upload
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [unit_tests, smoke_test]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_PASS }}
-          user: ${{ secrets.PYPI_USER }}
