@@ -29,14 +29,11 @@ from typing import Callable, Iterable
 
 from packaging.requirements import InvalidRequirement, Requirement
 
-from .core import (
-    Cache,
-    DependencyResolver,
-    Printer,
-    PyPIClient,
-    Resolution,
-    resolve_proxy_url,
-)
+from .cache import Cache
+from .client import PyPIClient, resolve_proxy_url
+from .models import Resolution
+from .printer import Printer
+from .resolver import DependencyResolver
 from .errors import PipSizeError, ResolutionError
 from .skip import SkipRules
 from .wheel import parse_wheel_spec, read_wheel

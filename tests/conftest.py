@@ -3,7 +3,7 @@ import zipfile
 import pytest
 from packaging.utils import canonicalize_name
 
-from pip_size.core import PyPIClient
+from pip_size.client import PyPIClient
 
 
 def _file(name, version, size, **kw):

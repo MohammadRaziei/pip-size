@@ -2,7 +2,7 @@
 
 import asyncio
 
-from pip_size.core import PyPIClient
+from pip_size.client import PyPIClient
 
 
 def test_client_parses_simple_api_and_caches(monkeypatch):

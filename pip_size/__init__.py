@@ -1,13 +1,9 @@
 from .__about__ import __version__
 from .api import PipSize, resolve, resolve_async
-from .core import (
-    Cache,
-    Conflict,
-    DependencyResolver,
-    PackageInfo,
-    Printer,
-    Resolution,
-)
+from .cache import Cache
+from .models import Conflict, PackageInfo, Resolution
+from .printer import Printer
+from .resolver import DependencyResolver
 from .errors import PipSizeError, ResolutionError, SkipSourceError, WheelError
 from .skip import SkipRules
 from .wheel import LocalWheel, read_wheel

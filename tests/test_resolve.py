@@ -4,7 +4,9 @@ import pytest
 from packaging.specifiers import SpecifierSet
 
 from pip_size import Cache, PipSize, Printer
-from pip_size.core import PackageInfo, WheelSelector, _group_by_version, pick_release
+from pip_size.client import _group_by_version
+from pip_size.models import PackageInfo
+from pip_size.selector import WheelSelector, pick_release
 
 pytestmark = pytest.mark.usefixtures("fake_pypi")
 
