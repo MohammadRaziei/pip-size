@@ -6,6 +6,8 @@ public API between minor releases.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09
+
 ### Added
 
 - **Build from source.** A project directory, a VCS URL (`git+https://...`), an sdist archive, or a direct reference (`name @ url`) is first built into a wheel and then sized like a local wheel. The root is tagged `[built from source]`; `PackageInfo.built_from`, `LocalWheel.built_from` and a `built_from` JSON field carry the source. Directories are built from a temporary copy, so your tree is not modified. Builds use pip, or `uv` for directories and archives when pip is not installed. Failures raise the new `BuildError`.
@@ -56,7 +58,8 @@ public API between minor releases.
 
 See the [release page](https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0).
 
-[Unreleased]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/MohammadRaziei/pip-size/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MohammadRaziei/pip-size/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0

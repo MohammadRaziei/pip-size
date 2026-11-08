@@ -16,19 +16,21 @@ pip-size ./dist/mypkg-1.0.tar.gz                   # an sdist archive
 
 ## What you get
 
+For a project `mypkg` that depends on `packaging` and `idna`:
+
 ```bash
-pip-size . --skip aiohttp
+pip-size ./mypkg --skip idna
 ```
 
 ```text
-  ⚙ building a wheel from . ...
+  ⚙ building a wheel from ./mypkg ...
 
-  pip-size==0.3.1  31.5 KB  (total: 158.4 KB)  [built from source]
-  ├── aiohttp==3.14.5  1.8 MB  [skipped: skip list]
+  mypkg==1.0  891.0 B  (total: 127.8 KB)  [built from source]
+  ├── idna==3.20  68.0 KB  [skipped: skip list]
   └── packaging==26.3  126.9 KB
 
-  Total to download : 158.4 KB
-  Skipped           : 1.8 MB  (1 package(s), not counted)
+  Total to download : 127.8 KB
+  Skipped           : 68.0 KB  (1 package(s), not counted)
 ```
 
 The root is tagged `[built from source]`. Every other option works as usual: `--no-deps`,
