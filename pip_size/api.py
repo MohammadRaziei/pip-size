@@ -116,14 +116,33 @@ async def resolve_async(
         )
         if wheel is not None:
             root = await resolver.resolve_wheel(wheel, wheel_extras)
-        else:
+        elif req is not None:
             root = await resolver.resolve(req)
+        else:  # pragma: no cover - the branches above always set one of them
+            raise ResolutionError("no package given")
 
     return Resolution(root=root, conflicts=resolver.conflicts, warnings=resolver.warnings)
 
 
+def _require_no_running_loop(name: str) -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        f"{name}() cannot be called from a running event loop (async code, Jupyter, ...). "
+        "Use `await pip_size.resolve_async(...)` there instead."
+    )
+
+
 def resolve(spec: str | os.PathLike[str] | Requirement, **kwargs) -> Resolution:
-    """Synchronous wrapper around :func:`resolve_async` (same arguments)."""
+    """
+    Synchronous wrapper around :func:`resolve_async` (same arguments).
+
+    Not usable from inside a running event loop (async code, Jupyter): call
+    ``await resolve_async(...)`` there.
+    """
+    _require_no_running_loop("resolve")
     return asyncio.run(resolve_async(spec, **kwargs))
 
 
@@ -172,6 +191,7 @@ class PipSize:
 
     def run(self, package_spec: str) -> bool:
         """Run synchronously. Returns True if the package was resolved."""
+        _require_no_running_loop("PipSize.run")
         return asyncio.run(self.run_async(package_spec))
 
     async def run_async(self, package_spec: str) -> bool:

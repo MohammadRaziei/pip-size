@@ -41,6 +41,7 @@ socks = ["aiohttp-socks"]
 pip-size = "pip_size.__main__:main"
 
 [project.urls]
+Documentation = "https://github.com/mohammadraziei/pip-size/blob/master/docs/python-api.md"
 Source = "https://github.com/mohammadraziei/pip-size"
 Issues = "https://github.com/mohammadraziei/pip-size/issues"
 

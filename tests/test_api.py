@@ -116,3 +116,22 @@ def test_broken_dependency_becomes_a_warning_not_a_failure(monkeypatch):
     res = pip_size.resolve("needs-ghost")
     assert res.total_size == 5
     assert any("ghost-package" in w for w in res.warnings)
+
+
+def test_resolve_inside_running_loop_gives_a_clear_error():
+    async def inside():
+        with pytest.raises(RuntimeError, match="resolve_async"):
+            pip_size.resolve("root")
+        with pytest.raises(RuntimeError, match="resolve_async"):
+            pip_size.PipSize().run("root")
+        return (await pip_size.resolve_async("root")).total_size     # the async API still works
+
+    assert asyncio.run(inside()) == 1250
+
+
+def test_resolve_async_can_run_concurrently():
+    async def both():
+        return await asyncio.gather(pip_size.resolve_async("root"), pip_size.resolve_async("root==1.0"))
+
+    first, second = asyncio.run(both())
+    assert (first.total_size, second.total_size) == (1250, 100)

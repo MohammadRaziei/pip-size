@@ -8,7 +8,7 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 from packaging.markers import default_environment
 from packaging.requirements import Requirement
@@ -54,7 +54,7 @@ class DependencyResolver:
     and are not expanded further.
     """
 
-    _ENV = default_environment()
+    _ENV = cast("dict[str, str]", default_environment())
 
     def __init__(
         self,
@@ -273,12 +273,13 @@ class DependencyResolver:
             triggered_by = self._evaluate_marker(req, active_extras, item.depth)
             if triggered_by is _SKIP:
                 continue
+            via_extra = triggered_by if isinstance(triggered_by, str) else None
 
             next_items.append(_WorkItem(
                 name      = req.name,
                 spec      = str(req.specifier),
                 extras    = set(req.extras) if req.extras else None,
-                via_extra = triggered_by,
+                via_extra = via_extra,
                 parent    = pkg,
                 depth     = item.depth + 1,
             ))

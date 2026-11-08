@@ -9,7 +9,7 @@ import os
 import aiohttp
 
 try:
-    from aiohttp_socks import ProxyConnector as _SocksConnector
+    from aiohttp_socks import ProxyConnector as _SocksConnector  # type: ignore[import-not-found]
     _SOCKS_AVAILABLE = True
 except ImportError:
     _SocksConnector = None          # type: ignore[assignment,misc]

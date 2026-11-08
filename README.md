@@ -5,7 +5,8 @@
 # pip-size
 
 **See the real install size of a PyPI package, dependencies included, without downloading anything.**<br/>
-No pip subprocess, no virtualenv, no wheel downloads.
+No pip subprocess, no virtualenv, no wheel downloads.<br/>
+Use it as a command-line tool, or import it as a Python library.
 
 [![PyPI](https://img.shields.io/pypi/v/pip-size.svg)](https://pypi.org/project/pip-size)
 [![Python](https://img.shields.io/pypi/pyversions/pip-size.svg)](https://pypi.org/project/pip-size)
@@ -13,9 +14,9 @@ No pip subprocess, no virtualenv, no wheel downloads.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE.txt)
 
 [Quick start](#quick-start) ·
+[Python API](#python-api) ·
 [Skipping](#skipping-dependencies) ·
 [Local wheels](#local-wheels) ·
-[Python API](#python-api) ·
 [How it works](#how-it-works)
 
 </div>
@@ -48,7 +49,7 @@ release costs your users before anyone installs anything.
 - **Works on a wheel you just built.** Point it at a `.whl` file: its size and `METADATA` are read from disk, the rest is resolved from PyPI.
 - **Skip what is already there.** Keep numpy, torch or anything installed in the tree with its size, but leave it out of the total.
 - **Made for scripts and CI.** `--quiet --bytes` prints one number, `--json` prints only JSON, and an unresolvable package exits with status 1.
-- **Also a library.** `pip_size.resolve()` returns plain data and prints nothing.
+- **A Python library, not just a CLI.** `import pip_size` and call `pip_size.resolve()` (or `await pip_size.resolve_async()`): you get a typed result object and nothing is printed. See [Python API](#python-api).
 
 ## Installation
 
@@ -56,7 +57,7 @@ release costs your users before anyone installs anything.
 pip install pip-size
 ```
 
-Requires Python 3.9 or newer.
+Requires Python 3.9 or newer. The same install gives you the `pip-size` command and the `pip_size` module.
 
 | Command | Adds |
 | --- | --- |
@@ -91,6 +92,42 @@ CI size budget (fails the step when the package cannot be resolved or is too big
 ```bash
 test "$(pip-size ./dist/mypkg-*.whl --quiet --bytes --skip-installed)" -lt 5000000
 ```
+
+## Python API
+
+`pip-size` is also a library, and the command line is a thin layer on top of it. Everything the
+CLI does is available from Python, and `resolve()` returns data instead of printing:
+
+```python
+import pip_size
+
+res = pip_size.resolve("requests")
+
+res.total_size                      # 671058, bytes to download
+for pkg in res.packages:            # the whole tree, root first
+    print(pkg.name, pkg.version, pkg.size)
+```
+
+```python
+# Leave out what is already installed; skipped packages stay in the tree, marked
+res = pip_size.resolve("fastapi", skip=["numpy"], skip_installed=True)
+res.skipped_size, [p.name for p in res.skipped]
+
+# A wheel you just built
+res = pip_size.resolve("./dist/mypkg-1.0-py3-none-any.whl")
+
+# Several packages at once
+res_a, res_b = await asyncio.gather(
+    pip_size.resolve_async("requests"),
+    pip_size.resolve_async("httpx"),
+)
+```
+
+`resolve()` is for scripts and tests; in async code and Jupyter use `await resolve_async()`. Errors
+are exceptions (`pip_size.ResolutionError` and friends, all deriving from `PipSizeError`), and
+`res.to_dict()` gives plain data for `json.dumps`.
+
+**Full reference, recipes and the result objects: [docs/python-api.md](https://github.com/MohammadRaziei/pip-size/blob/master/docs/python-api.md).**
 
 ## Skipping dependencies
 
@@ -242,38 +279,6 @@ logging:
 
 </details>
 
-## Python API
-
-```python
-import pip_size
-
-res = pip_size.resolve("requests")                      # in async code: await pip_size.resolve_async(...)
-res = pip_size.resolve("./dist/mypkg-1.0-py3-none-any.whl")
-res = pip_size.resolve("fastapi", skip=["numpy", "nvidia-*"], skip_installed=True)
-
-res.total_size      # bytes to download, skipped packages not counted
-res.skipped_size    # bytes of the skipped packages
-res.packages        # the whole tree flattened, root first
-res.skipped         # only the skipped packages
-res.conflicts       # version conflicts found in the tree
-res.warnings        # dependencies that could not be resolved (non-fatal)
-res.to_dict()       # plain data, all sizes in bytes
-
-for pkg in res.packages:
-    print(pkg.name, pkg.version, pkg.size, pkg.skipped or "")
-```
-
-| Argument | Meaning |
-| --- | --- |
-| `spec` | A requirement string, a `Requirement`, or the path to a `.whl` (optionally `x.whl[extra]`). |
-| `no_deps`, `all_extras`, `all_extras_deep`, `extras` | Same as the CLI flags. |
-| `skip`, `skip_installed`, `skip_files`, `installed_from` | Skip rules. `skip_rules=SkipRules(...)` passes a prebuilt set instead. |
-| `use_cache`, `proxy`, `progress` | Cache, proxy, and an optional callback that receives progress lines. |
-
-`resolve()` prints nothing. It raises `pip_size.ResolutionError` when the root package cannot be
-resolved (`WheelError` and `SkipSourceError` for a bad wheel or skip source; all derive from
-`PipSizeError`).
-
 ## JSON output
 
 `pip-size idna --json` prints exactly this and nothing else on stdout:
@@ -341,32 +346,6 @@ pip-size requests --proxy http://user:pass@host:8080    # HTTP proxy
 pip-size requests --proxy socks5://host:1080            # needs pip-size[socks]
 HTTPS_PROXY=http://host:8080 pip-size requests          # environment variables also work
 ```
-
-## Development
-
-```bash
-git clone https://github.com/mohammadraziei/pip-size
-cd pip-size
-pip install -e . pytest
-pytest
-```
-
-The tests run offline against an in-memory fake of PyPI.
-
-<details>
-<summary>Project layout</summary>
-
-| Module | Responsibility |
-| --- | --- |
-| `api.py` | Public `resolve()` / `resolve_async()` and the CLI-style `PipSize` class. |
-| `resolver.py` | Breadth-first dependency resolution, markers, extras, skip rules, conflicts. |
-| `client.py` | Async PyPI client (Simple API and release JSON), proxies. |
-| `selector.py` | Best file for the platform and best version for a specifier. |
-| `skip.py` | Skip rules: names, globs, installed packages, freeze files. |
-| `wheel.py` | Reading size and `METADATA` from a local `.whl`. |
-| `models.py`, `cache.py`, `printer.py`, `errors.py` | Result types, on-disk cache, output formatting, exceptions. |
-
-</details>
 
 ## License
 
