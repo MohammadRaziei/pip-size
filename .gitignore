@@ -128,3 +128,6 @@ Pipfile.lock
 poetry.lock
 
 build/
+
+# MkDocs build output
+site/

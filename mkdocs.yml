@@ -1,0 +1,108 @@
+site_name: pip-size
+site_description: See the real install size of a PyPI package, dependencies included, without downloading anything.
+site_url: https://mohammadraziei.github.io/pip-size/
+repo_url: https://github.com/MohammadRaziei/pip-size
+repo_name: MohammadRaziei/pip-size
+edit_uri: edit/master/docs/
+copyright: Copyright &copy; Mohammad Raziei. Released under the MIT License.
+
+strict: true
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - content.action.edit
+
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/MohammadRaziei/pip-size
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pip-size/
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quick start: quickstart.md
+  - User guide:
+      - Command line: cli.md
+      - Extras: guide/extras.md
+      - Skipping dependencies: guide/skipping.md
+      - Local wheels: guide/local-wheels.md
+      - Output formats: guide/output.md
+      - Proxies and cache: guide/network.md
+      - Use in CI: guide/ci.md
+  - Python API:
+      - Overview: python-api/index.md
+      - resolve(): python-api/resolve.md
+      - Result objects: python-api/results.md
+      - Skip rules: python-api/skip-rules.md
+      - Wheels: python-api/wheels.md
+      - Errors and logging: python-api/errors.md
+      - Recipes: python-api/recipes.md
+  - Concepts:
+      - How it works: concepts/how-it-works.md
+      - Limitations: concepts/limitations.md
+  - Project:
+      - Changelog: changelog.md
+      - Contributing: contributing.md

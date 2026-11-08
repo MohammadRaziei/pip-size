@@ -54,13 +54,29 @@ version matrix.
 | `cache.py` | On-disk response cache. |
 | `printer.py` | Tree, JSON and plain output. |
 | `errors.py` | The `PipSizeError` hierarchy. |
+| `docs/`, `mkdocs.yml` | The documentation site, and the logo in `docs/assets/`. |
+
+## Documentation
+
+The documentation is a [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) site: the
+pages are Markdown files in `docs/`, the navigation is in `mkdocs.yml`, and
+`CHANGELOG.md` and `CONTRIBUTING.md` are included as pages.
+
+```bash
+pip install mkdocs-material
+mkdocs serve              # live preview at http://127.0.0.1:8000
+mkdocs build --strict     # what CI runs: broken links fail the build
+```
+
+With Hatch: `hatch run docs:serve` and `hatch run docs:build`. Pushes to `master` that touch the
+docs are published to GitHub Pages by `.github/workflows/docs.yml`.
 
 ## Adding an option
 
 1. Implement it in the resolver (or the module it belongs to) with a test that uses `fake_pypi`.
 2. Expose it as a keyword argument of `resolve_async()` in `api.py`, and of `PipSize`.
 3. Add the command-line flag in `__main__.py` and a CLI test in `tests/test_cli.py`.
-4. Document it in the README and in `docs/python-api.md`. Example output must come from a real run.
+4. Document it in the docs (`docs/`) and, if it is user-facing, in the README. Example output must come from a real run.
 
 ## Releasing
 

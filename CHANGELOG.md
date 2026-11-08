@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions below 1.0 may change the
 public API between minor releases.
 
+## [Unreleased]
+
+### Added
+
+- A documentation site built with MkDocs Material (`docs/`, `mkdocs.yml`): getting started, a user guide, the Python API reference, how it works and limitations. A workflow publishes it to GitHub Pages.
+
+### Changed
+
+- The README is shorter and links to the documentation site.
+- The logo moved from `assets/` to `docs/assets/`.
+- The `--extras` and `--proxy` help texts were rewritten: their examples used to run together in `--help` output.
+
 ## [0.3.0] - 2026-11-08
 
 ### Added
@@ -37,5 +49,6 @@ public API between minor releases.
 
 See the [release page](https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0).
 
+[Unreleased]: https://github.com/MohammadRaziei/pip-size/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/MohammadRaziei/pip-size/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MohammadRaziei/pip-size/releases/tag/v0.2.0

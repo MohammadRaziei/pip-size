@@ -1,0 +1,9 @@
+/* Home page hero */
+.hero { text-align: center; padding: 1rem 0 0.5rem; }
+.hero img { margin-bottom: 0.5rem; }
+.hero h1 { margin: 0 0 0.5rem; font-weight: 700; }
+.hero p { max-width: 36rem; margin-left: auto; margin-right: auto; }
+
+/* Keep long file names and paths from stretching code blocks and tables */
+.md-typeset code { word-break: break-word; }
+.md-typeset pre > code { word-break: normal; }

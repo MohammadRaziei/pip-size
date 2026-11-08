@@ -41,7 +41,7 @@ socks = ["aiohttp-socks"]
 pip-size = "pip_size.__main__:main"
 
 [project.urls]
-Documentation = "https://github.com/mohammadraziei/pip-size/blob/master/docs/python-api.md"
+Documentation = "https://mohammadraziei.github.io/pip-size/"
 Source = "https://github.com/mohammadraziei/pip-size"
 Issues = "https://github.com/mohammadraziei/pip-size/issues"
 
@@ -193,3 +193,10 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = "coverage_html_report"
+
+[tool.hatch.envs.docs]
+dependencies = ["mkdocs-material>=9.5"]
+
+[tool.hatch.envs.docs.scripts]
+build = "mkdocs build --strict"
+serve = "mkdocs serve"

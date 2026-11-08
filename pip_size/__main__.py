@@ -77,14 +77,9 @@ def main() -> None:
         metavar="PATTERNS",
         default=None,
         help=(
-            "Comma-separated glob patterns selecting which extras to activate for "
-            "the ROOT package only (same as writing pkg[extra1,extra2] on the CLI, "
-            "but supports wildcards).\n"
-            "  --extras test          # exactly 'test'\n"
-            "  --extras 'test,dev'    # 'test' and 'dev'\n"
-            "  --extras 'dev*'        # anything starting with 'dev'\n"
-            "  --extras '*'           # every extra on the root package\n"
-            "Can be combined with --all-extras."
+            "Comma-separated names or glob patterns of extras to activate on the ROOT package "
+            "only, like pkg[extra1,extra2] but with wildcards. Examples: 'test', 'test,dev', "
+            "'dev*', '*' (every extra). Can be combined with --all-extras."
         ),
     )
     skipping = parser.add_argument_group(
@@ -118,17 +113,16 @@ def main() -> None:
         default=[],
         metavar="FILE",
         help="Skip every package listed in a pip-freeze / requirements file (repeatable). "
-             "Use '-' to read stdin:  pip freeze | pip-size pkg --skip-file -",
+             "Use '-' to read the list from stdin.",
     )
     parser.add_argument(
         "--proxy",
         metavar="URL",
         default=None,
         help=(
-            "Proxy URL for all PyPI requests (overrides HTTP_PROXY / ALL_PROXY env vars).\n"
-            "  HTTP:   --proxy http://user:pass@host:8080\n"
-            "  SOCKS5: --proxy socks5://user:pass@host:1080  (requires: pip install aiohttp-socks)\n"
-            "  SOCKS4: --proxy socks4://host:1080            (requires: pip install aiohttp-socks)"
+            "Proxy URL for all PyPI requests; overrides the HTTPS_PROXY / HTTP_PROXY / ALL_PROXY "
+            "environment variables. Examples: http://user:pass@host:8080, socks5://host:1080 "
+            "(SOCKS needs: pip install 'pip-size[socks]')."
         ),
     )
     parser.add_argument(
